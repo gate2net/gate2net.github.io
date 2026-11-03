@@ -48,6 +48,11 @@
     })
   })
 
+  // An email in two, around a <wbr>: on a phone it breaks after its @
+  // before anywhere else.
+  const mailbox = email => email.slice(0, email.lastIndexOf("@") + 1)
+  const domain = email => email.slice(email.lastIndexOf("@") + 1)
+
   const signIn = user =>
     [user.passkeys ? plural(user.passkeys, "passkey") : "", user.providers].filter(Boolean).join(" · ") || "email"
 
@@ -223,14 +228,15 @@
 
 <div :if="tab === 'users'" role="tabpanel" aria-label="Users"><Card>
   <div class="table-wrap">
-    <table class="table">
+    <table class="table tiles">
       <thead><tr><th>User</th><th>Role</th><th class="hide-narrow">Sign-in</th><th class="hide-narrow">Subdomains</th><th class="hide-narrow">Last sign-in</th><th class="center">Enabled</th><th></th></tr></thead>
       <tbody>
         <tr :each="user in users" :key="user.id" :class.disabled="user.disabled">
-          <td>
-            <strong>{{ user.name || user.email }}</strong>
+          <td class="user-cell">
+            <strong :if="user.name">{{ user.name }}</strong>
+            <strong :else>{{ mailbox(user.email) }}<wbr>{{ domain(user.email) }}</strong>
             <span :if="user.id === app.user.id" class="muted small">you</span>
-            <div :if="user.name" class="muted small">{{ user.email }}</div>
+            <div :if="user.name" class="muted small">{{ mailbox(user.email) }}<wbr>{{ domain(user.email) }}</div>
             <div :if="!user.allowed" class="small danger">not allowed by the configuration: add them again to let them in</div>
           </td>
           <td class="keep">
@@ -284,8 +290,8 @@
 
 <div :elseif="tab === 'subdomains'" role="tabpanel" aria-label="Subdomains"><Card>
   <div :if="subdomains.length" class="table-wrap">
-    <table class="table">
-      <thead><tr><th>Subdomain</th><th class="hide-narrow">Owner</th><th>Access</th><th class="hide-narrow">Keys</th><th :if="app.tcp" class="hide-narrow">Ports</th><th>Status</th><th class="hide-narrow">Requests</th></tr></thead>
+    <table class="table tiles">
+      <thead><tr><th>Subdomain</th><th class="hide-narrow">Owner</th><th>Access</th><th class="hide-narrow">Keys</th><th :if="app.tcp" class="hide-narrow">Ports</th><th class="hide-narrow">Requests</th><th>Status</th></tr></thead>
       <tbody>
         <tr :each="sub in subdomains" :key="sub.name">
           <td><a class="name-cell" :href="'/subdomains/' + encodeURIComponent(sub.name)"><span class="tile" :class="'tile-' + sub.access" aria-hidden="true">{{ sub.name[0] }}</span><strong>{{ sub.name }}</strong></a></td>
@@ -293,11 +299,11 @@
           <td><AccessBadge :access="sub.access" /></td>
           <td class="hide-narrow">{{ sub.keys }}</td>
           <td :if="app.tcp" class="hide-narrow">{{ sub.ports || "—" }}<span :if="sub.ports_online" class="muted small"> · {{ sub.ports_online }} online</span></td>
+          <td class="hide-narrow">{{ sub.tunnel ? sub.tunnel.requests : "—" }}</td>
           <td>
             <StatusBadge :tunnel="sub.tunnel" />
             <div :if="sub.tunnel" class="muted small hide-narrow">{{ sub.tunnel.client_addr }} · {{ ago(sub.tunnel.created_at) }}</div>
           </td>
-          <td class="hide-narrow">{{ sub.tunnel ? sub.tunnel.requests : "—" }}</td>
         </tr>
       </tbody>
     </table>

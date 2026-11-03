@@ -214,16 +214,22 @@ main.loading { opacity: .45; pointer-events: none; transition: opacity .25s .12s
 .table tbody tr:hover td { background: var(--ig-fill-2); }
 .table tbody tr:hover td:first-child { border-radius: 8px 0 0 8px; }
 .table tbody tr:hover td:last-child { border-radius: 0 8px 8px 0; }
-.table tr.disabled td:not(.keep) { opacity: .5; }
+/* A disabled row's text, dimmed: the text, not the cells, so a tile stays
+   whole. A warning keeps its colour. */
+.table tr.disabled td:not(.keep), .table tr.disabled td:not(.keep) .muted { color: color-mix(in srgb, var(--ig-fg) 50%, transparent); }
 .table td code { word-break: break-all; }
 .table td a strong { color: var(--ig-fg); font-weight: var(--ig-weight-semibold); }
 .table td a:hover strong { color: var(--ig-link); }
 .table-wrap + * { margin-top: var(--ig-space-6); }
 .row-actions { white-space: nowrap; }
 /* A table whose rows are tiles of their own, a little apart, lined up with
-   the fields around them: the subdomains, a subdomain's keys. */
-.table-wrap:has(> .tiles) { margin: 0; }
-.table.tiles { border-spacing: 0 6px; margin: -6px 0; }
+   the fields around them: the subdomains, a subdomain's keys, the admin's
+   lists. The room the spacing leaves above the first row and below the
+   last is taken back on the wrap, not the table: a table pulled past the
+   wrap that scrolls it would scroll by that much. A row's last cell ends
+   its tile, so the last column is one a phone shows too. */
+.table-wrap:has(> .tiles) { margin: -6px 0; }
+.table.tiles { border-spacing: 0 6px; }
 .table.tiles th { border-bottom: 0; padding-bottom: 0; }
 /* On a phone, a little less around each cell: a tile's edges show, so the
    row has to fit where a plain table's could run a pixel or two over. */
@@ -238,6 +244,12 @@ main.loading { opacity: .45; pointer-events: none; transition: opacity .25s .12s
 .table.tiles tbody tr td:last-child { border-right: var(--ig-hairline) solid var(--ig-line); border-radius: 0 var(--ig-radius-md) var(--ig-radius-md) 0; }
 .table.tiles tbody tr:hover td { background: var(--ig-row-hover); }
 .table.tiles tbody tr:active td { background: var(--ig-row-active); }
+/* A hint under a table, as far from it as anything else: `.hint` alone
+   pulls it up, for the labels it sits in. */
+.table-wrap + .hint { margin-top: var(--ig-space-6); }
+/* A user's name and email: on a phone, broken after the @ (a <wbr>) or,
+   if that is not enough, anywhere, rather than push the row past its card. */
+.user-cell { overflow-wrap: anywhere; }
 
 .name-cell { display: flex; align-items: center; gap: var(--ig-space-5); min-width: 0; }
 a.name-cell:hover { text-decoration: none; }
