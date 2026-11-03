@@ -220,13 +220,15 @@ func (s *Server) handleAdminRelayConfirm(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "The code has expired. Check the new SMTP relay again.", Expired: true})
 		return
 	}
+	// A wrong code is a 400, not a 401: the owner is signed in, and the
+	// dashboard takes a 401 to mean the session ended, and signs them out.
 	switch s.codes.check(rc.flow, strings.Join(strings.Fields(req.Code), "")) {
 	case codeWrong:
-		jsonError(w, http.StatusUnauthorized, "That code is not right. Check the email and try again.")
+		jsonError(w, http.StatusBadRequest, "That code is not right. Check the email and try again.")
 		return
 	case codeExpired:
 		s.relay.drop(a.User.ID)
-		writeJSON(w, http.StatusUnauthorized, apiError{Error: "That code has expired or was tried too many times. Check the new SMTP relay again.", Expired: true})
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "That code has expired or was tried too many times. Check the new SMTP relay again.", Expired: true})
 		return
 	}
 	s.relay.drop(a.User.ID)

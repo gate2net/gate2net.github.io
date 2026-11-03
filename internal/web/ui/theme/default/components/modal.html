@@ -114,10 +114,10 @@
   .modal {
     position: fixed;
     inset: 0 0 auto;
-    width: min(360px, calc(100vw - 32px));
-    max-height: calc(100dvh - max(72px, 12vh) - 32px);
+    width: min(22.5rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - max(4.5rem, 12vh) - 2rem);
     min-height: 0;
-    margin: max(72px, 12vh) auto 0;
+    margin: max(4.5rem, 12vh) auto 0;
     padding: 0;
     border: var(--ig-hairline) solid var(--ig-line);
     border-radius: var(--ig-radius-xl);
@@ -131,16 +131,16 @@
     line-height: var(--ig-leading);
     overflow: hidden;
   }
-  .size-md { width: min(480px, calc(100vw - 32px)); }
+  .size-md { width: min(30rem, calc(100vw - 2rem)); }
   .size-lg {
-    width: min(620px, calc(100vw - 32px));
-    margin-top: max(40px, 6vh);
-    max-height: calc(100dvh - 80px);
+    width: min(38.75rem, calc(100vw - 2rem));
+    margin-top: max(2.5rem, 6vh);
+    max-height: calc(100dvh - 5rem);
   }
   .size-xl {
-    width: min(1180px, calc(100vw - 32px));
-    margin-top: max(24px, 4vh);
-    max-height: calc(100dvh - 48px);
+    width: min(73.75rem, calc(100vw - 2rem));
+    margin-top: max(1.5rem, 4vh);
+    max-height: calc(100dvh - 3rem);
   }
   .modal[open] { animation: arrive var(--ig-duration-slow) var(--ig-ease-spring); }
   .modal.leaving { animation: leave var(--ig-duration-slow) var(--ig-ease-in) forwards; }
@@ -153,8 +153,8 @@
   /* Keyframes of its own for the way out, not `fade` reversed: an animation
      whose name stays the same is not started again. */
   .modal.leaving::backdrop { animation: fade-out var(--ig-duration-slow) ease forwards; }
-  @keyframes arrive { from { opacity: 0; transform: translateY(-8px) scale(.97); } }
-  @keyframes leave { to { opacity: 0; transform: translateY(-6px) scale(.98); } }
+  @keyframes arrive { from { opacity: 0; transform: translateY(-.5rem) scale(.97); } }
+  @keyframes leave { to { opacity: 0; transform: translateY(-.375rem) scale(.98); } }
   @keyframes fade { from { opacity: 0; } }
   @keyframes fade-out { to { opacity: 0; } }
 
@@ -216,7 +216,7 @@
       inset: auto 0 0;
       width: 100%;
       max-width: 100%;
-      max-height: calc(100dvh - 48px);
+      max-height: calc(100dvh - 3rem);
       margin: 0;
       border-width: var(--ig-hairline) 0 0;
       border-radius: var(--ig-radius-xl) var(--ig-radius-xl) 0 0;

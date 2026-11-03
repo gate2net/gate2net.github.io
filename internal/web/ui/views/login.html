@@ -8,6 +8,7 @@
   const Alert = await import("@theme/components/alert.html")
   const Button = await import("@theme/components/button.html")
   const Card = await import("@theme/components/card.html")
+  const OtpInput = await import("@theme/components/otp-input.html")
 
   document.title = "Sign in · intergate"
 
@@ -38,7 +39,9 @@
     busy = false
   }
 
+  // From the button, Enter, or the last digit typed or filled in.
   const verify = async () => {
+    if (busy) return
     busy = true
     error = ""
     try {
@@ -90,17 +93,15 @@
   <div :if="sentTo">
     <h1 class="login-title">Check your email</h1>
     <p class="muted">If <strong>{{ sentTo }}</strong> can sign in here, we just sent it a 6-digit code.</p>
-    <div :if="error" class="login-alert"><Alert tone="bad" flush>{{ error }}</Alert></div>
     <form class="form form-login" @submit.prevent="verify">
       <label>Code
-        <input class="code-input" name="code" required inputmode="numeric" autocomplete="one-time-code"
-               pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123456" autofocus
-               :value="code" @input="code = $event.target.value">
+        <OtpInput :model="code" group="3" :invalid="!!error" autofocus @complete="verify()" />
       </label>
       <Button type="submit" block :disabled="busy">Sign in</Button>
     </form>
     <p class="small muted">Didn’t get it? Check your spam folder or
       <button type="button" class="link" @click="otherAddress">try again</button>.</p>
+    <div :if="error" class="login-alert"><Alert tone="bad" flush>{{ error }}</Alert></div>
   </div>
 
   <div :else>

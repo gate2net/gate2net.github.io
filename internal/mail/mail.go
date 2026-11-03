@@ -31,6 +31,9 @@ type Message struct {
 	Subject string
 	Body    string
 	HTML    string
+	// Header holds more header fields, in order, written as they are: the
+	// OTP-Token of a code.
+	Header [][2]string
 }
 
 // Sender delivers messages.
@@ -164,6 +167,12 @@ func Compose(from, to *mail.Address, m Message) []byte {
 	header("Message-ID", "<"+hex.EncodeToString(id)+"@"+domain+">")
 	header("MIME-Version", "1.0")
 	header("Auto-Submitted", "auto-generated")
+	for _, h := range m.Header {
+		// A line break would start a header field of its own.
+		if !strings.ContainsAny(h[0]+h[1], "\r\n") {
+			header(h[0], h[1])
+		}
+	}
 	if m.HTML == "" {
 		header("Content-Type", "text/plain; charset=utf-8")
 		header("Content-Transfer-Encoding", "quoted-printable")

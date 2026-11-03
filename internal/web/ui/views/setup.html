@@ -10,6 +10,7 @@
   const Button = await import("@theme/components/button.html")
   const Card = await import("@theme/components/card.html")
   const Icon = await import("@theme/components/icon.html")
+  const OtpInput = await import("@theme/components/otp-input.html")
   const Segmented = await import("@theme/components/segmented.html")
   const WHERE = [{ value: "server", label: "Server" }, { value: "docker", label: "Docker" }, { value: "kubernetes", label: "Kubernetes" }]
 
@@ -101,7 +102,9 @@
     code = ""
   })
 
+  // From the button, Enter, or the last digit typed or filled in.
   const verify = async () => {
+    if (busy) return
     busy = true
     error = ""
     try {
@@ -221,18 +224,16 @@
     <div :else>
       <h1 class="login-title">Check your email</h1>
       <p class="muted">We sent a 6-digit code to <strong>{{ sentTo }}</strong>. With it, the setup is done and you are signed in as the owner.</p>
-      <div :if="error" class="login-alert"><Alert tone="bad" flush>{{ error }}</Alert></div>
       <form class="form form-login" @submit.prevent="verify">
         <label>Code
-          <input class="code-input" name="code" required inputmode="numeric" autocomplete="one-time-code"
-                 pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123456" autofocus
-                 :value="code" @input="code = $event.target.value">
+          <OtpInput :model="code" group="3" :invalid="!!error" autofocus @complete="verify()" />
         </label>
         <Button type="submit" block :disabled="busy">Finish the setup</Button>
       </form>
       <p class="small muted">Didn’t get it? Check your spam folder,
         <button type="button" class="link" @click="otherAddress">use another address</button><span :if="setup.smtp"> or
         <button type="button" class="link" @click="changeEmail">change the email settings</button></span>.</p>
+      <div :if="error" class="login-alert"><Alert tone="bad" flush>{{ error }}</Alert></div>
     </div>
   </div>
 </Card>

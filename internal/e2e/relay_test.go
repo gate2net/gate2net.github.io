@@ -75,7 +75,8 @@ func TestSMTPRelay(t *testing.T) {
 	if code == wrong {
 		wrong = "111111"
 	}
-	if resp, _ := call(t, owner, "POST", "/api/admin/email/confirm", map[string]string{"code": wrong}); resp.StatusCode != http.StatusUnauthorized {
+	// Not a 401, which the dashboard takes for a session that ended.
+	if resp, _ := call(t, owner, "POST", "/api/admin/email/confirm", map[string]string{"code": wrong}); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("wrong code: %d", resp.StatusCode)
 	}
 	resp, body = call(t, owner, "POST", "/api/admin/email/confirm", map[string]string{"code": code})

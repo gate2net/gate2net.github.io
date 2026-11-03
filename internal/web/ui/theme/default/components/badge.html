@@ -34,7 +34,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--ig-space-2);
-    padding: 1px 9px;
+    padding: 1px .5625rem;
     border-radius: var(--ig-radius-full);
     background: var(--ig-fill);
     color: var(--ig-fg-muted);
@@ -46,7 +46,7 @@
     font-variant-numeric: tabular-nums;
     vertical-align: middle;
   }
-  .lg { padding: 3px var(--ig-space-4); }
+  .lg { padding: .1875rem var(--ig-space-4); }
   .tone-accent { --hue: var(--ig-accent); color: var(--ig-link); }
   .tone-ok { --hue: var(--ig-green); color: var(--ig-ok); }
   .tone-warn { --hue: var(--ig-orange); color: var(--ig-warn); }
@@ -57,8 +57,8 @@
   .solid.tone-ok { color: var(--ig-on-ok-solid); background: var(--ig-ok-solid); }
 
   .dot {
-    width: 7px;
-    height: 7px;
+    width: .4375rem;
+    height: .4375rem;
     border-radius: 50%;
     background: currentColor;
     opacity: .55;
@@ -67,7 +67,7 @@
   .pulse { animation: pulse 2.4s ease-out infinite; }
   @keyframes pulse {
     0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--hue) 55%, transparent); }
-    70%, 100% { box-shadow: 0 0 0 6px transparent; }
+    70%, 100% { box-shadow: 0 0 0 .375rem transparent; }
   }
   @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 </style>

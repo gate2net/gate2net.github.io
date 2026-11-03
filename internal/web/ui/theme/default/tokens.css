@@ -14,7 +14,13 @@
    Any element is an island of the other tone with `data-tone="light"` (or
    `"dark"`): the colours are re-declared on it, and everything inside draws
    with them. `Card` and `Modal` are light islands of their own. Shape, type
-   and motion are the same in both. */
+   and motion are the same in both.
+
+   **Lengths are rem** (1rem is 16px on a desktop), so on a phone, where the
+   root's font size follows the window's width (at the end of this file),
+   everything scales with it. Only what must not stays in px: hairlines and
+   borders under 2px, `999px` for "round", and a field's text, at least
+   16px (`max(16px, 1rem)`), which iOS would zoom into otherwise. */
 
 :root {
   /* ---- the page ----------------------------------------------------------- */
@@ -32,10 +38,10 @@
   --ig-material: rgb(255 255 255 / .75);
   --ig-material-bar: rgb(10 10 10 / .62);
   --ig-material-hud: rgb(255 255 255 / .88);
-  --ig-blur: blur(12px);
+  --ig-blur: blur(.75rem);
   /* What a dialog lays over the page behind it. */
   --ig-overlay: rgb(10 14 30 / .35);
-  --ig-overlay-blur: blur(3px);
+  --ig-overlay-blur: blur(.1875rem);
 
   /* ---- colour, by role ---------------------------------------------------- */
 
@@ -48,7 +54,7 @@
   --ig-button-1: #006cff;
   --ig-button-1-hover: #1a78ff;
   --ig-button-1-active: #005ad6;
-  --ig-button-1-shadow: inset 0 1px 0 rgb(255 255 255 / .3), inset 0 0 0 1px rgb(255 255 255 / .14), 0 1px 2px rgb(0 0 0 / .16);
+  --ig-button-1-shadow: inset 0 1px 0 rgb(255 255 255 / .3), inset 0 0 0 1px rgb(255 255 255 / .14), 0 1px .125rem rgb(0 0 0 / .16);
   /* Buttons that lose something, and the quiet dark one (sign out). */
   --ig-danger: #d92d23;
   --ig-dark: #3a3f4a;
@@ -82,28 +88,28 @@
   --ig-switch-on: linear-gradient(180deg, #4cd97b, #28b850);
   --ig-switch-off: linear-gradient(180deg, #ff6b62, #e8352b);
   --ig-switch-knob: linear-gradient(180deg, #fff, #f1f1f3);
-  --ig-switch-well: inset 0 1px 2px rgb(0 0 0 / .18);
-  --ig-switch-knob-shadow: 0 1px 3px rgb(0 0 0 / .3);
+  --ig-switch-well: inset 0 1px .125rem rgb(0 0 0 / .18);
+  --ig-switch-knob-shadow: 0 1px .1875rem rgb(0 0 0 / .3);
 
   /* The line under the toolbar's chosen tab. */
   --ig-tab-line: #64b5ff;
   /* The ring a focused control draws. */
-  --ig-ring: 0 0 0 3.5px rgb(64 156 255 / .7);
+  --ig-ring: 0 0 0 .21875rem rgb(64 156 255 / .7);
 
   /* A button is tinted glass: light catches its rim, top and bottom, and its
      colour glows softly beneath. */
   --ig-gloss: linear-gradient(180deg, rgb(255 255 255 / .16), rgb(255 255 255 / 0) 55%, rgb(255 255 255 / .06));
   --ig-gloss-2: linear-gradient(180deg, rgb(255 255 255 / .12), rgb(255 255 255 / 0) 55%);
   --ig-rim: inset 0 1px 0 rgb(255 255 255 / .42), inset 0 -1px 0 rgb(255 255 255 / .1), inset 0 0 0 1px rgb(255 255 255 / .16);
-  --ig-glass-blur: blur(14px) saturate(190%);
+  --ig-glass-blur: blur(.875rem) saturate(190%);
 
   /* Shadows. */
-  --ig-shadow-xs: 0 1px 2px rgb(0 0 0 / .05);
-  --ig-shadow-sm: 0 1px 2px rgb(0 0 0 / .12);
+  --ig-shadow-xs: 0 1px .125rem rgb(0 0 0 / .05);
+  --ig-shadow-sm: 0 1px .125rem rgb(0 0 0 / .12);
   --ig-shadow-inset: 0 .5px 1px rgb(0 0 0 / .12) inset;
-  --ig-shadow: 0 1px 2px rgb(0 0 0 / .16), 0 14px 36px rgb(10 14 30 / .3);
-  --ig-shadow-pop: 0 2px 6px rgb(0 0 0 / .2), 0 22px 56px rgb(10 14 30 / .45);
-  --ig-shadow-lift: 0 3px 10px rgb(0 0 0 / .08);
+  --ig-shadow: 0 1px .125rem rgb(0 0 0 / .16), 0 .875rem 2.25rem rgb(10 14 30 / .3);
+  --ig-shadow-pop: 0 .125rem .375rem rgb(0 0 0 / .2), 0 1.375rem 3.5rem rgb(10 14 30 / .45);
+  --ig-shadow-lift: 0 .1875rem .625rem rgb(0 0 0 / .08);
 
   /* Code: a light Monokai, its hues deep enough to read on paper. */
   --ig-code-bg: #fbfaf4;
@@ -136,16 +142,16 @@
 
   --ig-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
   --ig-font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  --ig-text-2xs: 10px;
-  --ig-text-xs: 11px;
-  --ig-text-sm: 12px;
-  --ig-text-md: 13px;
-  --ig-text-base: 14px;
-  --ig-text-lg: 15px;
-  --ig-text-xl: 17px;
-  --ig-text-2xl: 22px;
-  --ig-text-3xl: 24px;
-  --ig-text-4xl: 28px;
+  --ig-text-2xs: .625rem;
+  --ig-text-xs: .6875rem;
+  --ig-text-sm: .75rem;
+  --ig-text-md: .8125rem;
+  --ig-text-base: .875rem;
+  --ig-text-lg: .9375rem;
+  --ig-text-xl: 1.0625rem;
+  --ig-text-2xl: 1.375rem;
+  --ig-text-3xl: 1.5rem;
+  --ig-text-4xl: 1.75rem;
   --ig-weight-regular: 400;
   --ig-weight-medium: 500;
   --ig-weight-semibold: 600;
@@ -156,35 +162,35 @@
 
   /* ---- space -------------------------------------------------------------- */
 
-  --ig-space-1: 4px;
-  --ig-space-2: 6px;
-  --ig-space-3: 8px;
-  --ig-space-4: 10px;
-  --ig-space-5: 12px;
-  --ig-space-6: 14px;
-  --ig-space-7: 16px;
-  --ig-space-8: 20px;
-  --ig-space-9: 24px;
-  --ig-space-10: 32px;
+  --ig-space-1: .25rem;
+  --ig-space-2: .375rem;
+  --ig-space-3: .5rem;
+  --ig-space-4: .625rem;
+  --ig-space-5: .75rem;
+  --ig-space-6: .875rem;
+  --ig-space-7: 1rem;
+  --ig-space-8: 1.25rem;
+  --ig-space-9: 1.5rem;
+  --ig-space-10: 2rem;
 
   /* ---- shape -------------------------------------------------------------- */
 
-  --ig-radius-xs: 4px;
-  --ig-radius-sm: 6px;
-  --ig-radius-control: 8px;
-  --ig-radius-md: 10px;
-  --ig-radius-lg: 12px;
-  --ig-radius-xl: 14px;
+  --ig-radius-xs: .25rem;
+  --ig-radius-sm: .375rem;
+  --ig-radius-control: .5rem;
+  --ig-radius-md: .625rem;
+  --ig-radius-lg: .75rem;
+  --ig-radius-xl: .875rem;
   --ig-radius-full: 999px;
   --ig-hairline: .5px;
 
   /* A control's height, so a button, a field and a select on one row line up
      without anybody measuring. A phone's are taller, for a finger. */
-  --ig-control-xs: 28px;
-  --ig-control-sm: 30px;
-  --ig-control-md: 38px;
+  --ig-control-xs: 1.75rem;
+  --ig-control-sm: 1.875rem;
+  --ig-control-md: 2.375rem;
   /* Between blocks on a page: one card and the next. */
-  --ig-block-gap: 16px;
+  --ig-block-gap: 1rem;
 
   /* ---- motion ------------------------------------------------------------- */
 
@@ -230,7 +236,7 @@
   --ig-button-2: rgb(255 255 255 / .13);
   --ig-button-2-hover: rgb(255 255 255 / .2);
   --ig-button-2-active: rgb(255 255 255 / .08);
-  --ig-button-2-shadow: inset 0 1px 0 rgb(255 255 255 / .3), inset 0 0 0 1px rgb(255 255 255 / .14), 0 1px 2px rgb(0 0 0 / .16);
+  --ig-button-2-shadow: inset 0 1px 0 rgb(255 255 255 / .3), inset 0 0 0 1px rgb(255 255 255 / .14), 0 1px .125rem rgb(0 0 0 / .16);
   /* A row that is a tile of its own (a subdomain, a key): clear glass,
      lighter on hover, sinking while pressed. */
   --ig-row: rgb(255 255 255 / .13);
@@ -266,7 +272,7 @@
   --ig-button-2: rgb(255 255 255 / .55);
   --ig-button-2-hover: rgb(255 255 255 / .8);
   --ig-button-2-active: rgb(255 255 255 / .35);
-  --ig-button-2-shadow: inset 0 1px 0 rgb(255 255 255 / .95), inset 0 0 0 1px rgb(0 0 0 / .09), 0 1px 2px rgb(0 0 0 / .07);
+  --ig-button-2-shadow: inset 0 1px 0 rgb(255 255 255 / .95), inset 0 0 0 1px rgb(0 0 0 / .09), 0 1px .125rem rgb(0 0 0 / .07);
   /* A tile row stands out from the card short of a field's white, which
      it takes on hover. */
   --ig-row: rgb(255 255 255 / .8);
@@ -281,9 +287,21 @@
 /* Wider than a phone: controls a step shorter, for a pointer. */
 @media (min-width: 640px) {
   :root {
-    --ig-control-md: 32px;
-    --ig-block-gap: 18px;
+    --ig-control-md: 2rem;
+    --ig-block-gap: 1.125rem;
   }
+}
+
+/* On a phone the root's font size follows the window's width: 16px on one
+   390px wide, 13px on a 320px one, 17.6px on a 430px one. Every length
+   here, and every one the components and the page write, is in rem, so
+   the whole dashboard scales with it, as a picture would: the same layout,
+   the same lines breaking in the same places, on a small phone as on a
+   large one. Past 439px, where phones end, it holds at 18px, so a small
+   tablet does not get a giant page. On a wider screen it is the browser's
+   own, 16px, and 1rem is the pixel sizes the comments give. */
+@media (width < 640px) {
+  html { font-size: min(100vw / 24.375, 18px); }
 }
 
 /* Once, here, instead of a media query in every component: every transition
