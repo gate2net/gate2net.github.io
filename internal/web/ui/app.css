@@ -261,15 +261,6 @@ a.name-cell:hover { text-decoration: none; }
 .name-cell .host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ig-fg-muted); }
 /* On a phone, what its columns say goes under the name instead. */
 .row-badges { display: flex; flex-wrap: wrap; gap: var(--ig-space-2); margin-top: var(--ig-space-2); }
-/* A subdomain's tile: its initial, coloured by who can open it. */
-.tile {
-  flex: none; width: 32px; height: 32px; border-radius: var(--ig-radius-control); display: grid; place-items: center;
-  color: var(--ig-on-accent); font-weight: var(--ig-weight-bold); font-size: var(--ig-text-base); text-transform: uppercase;
-  background: var(--ig-tile-neutral); box-shadow: var(--ig-tile-edge);
-}
-.tile-public { background: var(--ig-tile-public); }
-.tile-users { background: var(--ig-tile-users); }
-.tile-private { background: var(--ig-tile-private); }
 td [data-c79-box] + .muted { margin-left: var(--ig-space-2); }
 
 /* Role picker: a customizable select, where browsers have it, whose

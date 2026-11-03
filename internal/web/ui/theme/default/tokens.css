@@ -71,12 +71,7 @@
   --ig-hue-teal: #20a8c4;
   --ig-hue-pink: #ff2d55;
 
-  /* A subdomain's tile, by who can open it, and an avatar without a photo. */
-  --ig-tile-neutral: linear-gradient(160deg, #8e8e93, #636366);
-  --ig-tile-public: linear-gradient(160deg, #64d2ff, #0a84ff);
-  --ig-tile-users: linear-gradient(160deg, #ffd60a, #ff9f0a);
-  --ig-tile-private: linear-gradient(160deg, #ff8a80, #ff375f);
-  --ig-tile-edge: 0 .5px 0 rgb(255 255 255 / .35) inset, 0 1px 2px rgb(0 0 0 / .15);
+  /* An avatar without a photo. */
   --ig-avatar: linear-gradient(160deg, #a2a2ab, #6e6e76);
 
   /* Roles, as their icons are drawn. */

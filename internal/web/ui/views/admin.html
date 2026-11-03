@@ -294,7 +294,7 @@
       <thead><tr><th>Subdomain</th><th class="hide-narrow">Owner</th><th>Access</th><th class="hide-narrow">Keys</th><th :if="app.tcp" class="hide-narrow">Ports</th><th class="hide-narrow">Requests</th><th>Status</th></tr></thead>
       <tbody>
         <tr :each="sub in subdomains" :key="sub.name">
-          <td><a class="name-cell" :href="'/subdomains/' + encodeURIComponent(sub.name)"><span class="tile" :class="'tile-' + sub.access" aria-hidden="true">{{ sub.name[0] }}</span><strong>{{ sub.name }}</strong></a></td>
+          <td><a class="name-cell" :href="'/subdomains/' + encodeURIComponent(sub.name)"><strong>{{ sub.name }}</strong></a></td>
           <td class="hide-narrow">{{ sub.owner }}</td>
           <td><AccessBadge :access="sub.access" /></td>
           <td class="hide-narrow">{{ sub.keys }}</td>
