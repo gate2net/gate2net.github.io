@@ -191,6 +191,9 @@ func TestCodeMessage(t *testing.T) {
 	if got := msg.Header.Get("Subject"); got != m.Subject {
 		t.Errorf("Subject header %q", got)
 	}
+	if got := msg.Header["Otp-Token"]; len(got) != 1 || got[0] != `"042137"; origin="https://gate.example.com"` {
+		t.Errorf("OTP-Token header %q", got)
+	}
 	parts := multipart.NewReader(msg.Body, params["boundary"])
 	for _, want := range []struct{ typ, body string }{{"text/plain; charset=utf-8", m.Body}, {"text/html; charset=utf-8", m.HTML}} {
 		p, err := parts.NextPart()
@@ -204,5 +207,42 @@ func TestCodeMessage(t *testing.T) {
 	}
 	if _, err := parts.NextPart(); err != io.EOF {
 		t.Errorf("more parts: %v", err)
+	}
+}
+
+func TestOTPToken(t *testing.T) {
+	for _, c := range []struct{ site, want string }{
+		{"https://gate.example.com/", `"042137"; origin="https://gate.example.com"`},
+		// The canonical origin: lower case, no default port, no path.
+		{"HTTPS://Gate.Example.COM:443/login?rd=/", `"042137"; origin="https://gate.example.com"`},
+		{"https://gate.example.com:8443/", `"042137"; origin="https://gate.example.com:8443"`},
+		{"https://bücher.example/", `"042137"; origin="https://xn--bcher-kva.example"`},
+		// Plain http only on this machine.
+		{"http://localhost:8080/", `"042137"; origin="http://localhost:8080"`},
+		{"http://gate.localhost:80/", `"042137"; origin="http://gate.localhost"`},
+		{"http://127.0.0.1:18080/", `"042137"; origin="http://127.0.0.1:18080"`},
+		{"http://[::1]:8080/", `"042137"; origin="http://[::1]:8080"`},
+		{"http://gate.example.com/", ""},
+		{"http://10.0.0.1/", ""},
+		{"ftp://gate.example.com/", ""},
+		{"", ""},
+		{"/relative", ""},
+	} {
+		if got := OTPToken("042137", c.site); got != c.want {
+			t.Errorf("OTPToken(%q) = %q, want %q", c.site, got, c.want)
+		}
+	}
+	// What a Structured Field string cannot hold is not sent.
+	if got := OTPToken("04\n2137", "https://gate.example.com/"); got != "" {
+		t.Errorf("a code with a line break: %q", got)
+	}
+	if got := OTPToken(`4"2`, "https://gate.example.com/"); got != `"4\"2"; origin="https://gate.example.com"` {
+		t.Errorf("a quote: %q", got)
+	}
+
+	// Plain http elsewhere: no header at all.
+	m := Code{To: "a@example.com", Code: "042137", Subject: "is your code", TTL: time.Minute, Site: "http://gate.example.com/"}.Message()
+	if len(m.Header) != 0 {
+		t.Errorf("header for an http site: %q", m.Header)
 	}
 }
