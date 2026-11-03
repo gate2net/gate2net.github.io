@@ -186,10 +186,9 @@
     font-family: var(--ig-font-sans);
   }
 
-  /* Sized in rem, so on a phone, where the root's font size follows the
-     window's width (`tokens.css`), the boxes scale with it: 44 by 52px on
-     a desktop, and six of them and a dash in the 314px a card leaves on a
-     390px phone. */
+  /* 44 by 52px boxes (in rem, as every length: on a phone they scale with
+     the window, `tokens.css`), six of them and a dash in the 314px a card
+     leaves on a 390px phone. */
   .slots {
     display: flex;
     align-items: center;
@@ -208,11 +207,11 @@
     min-width: 0;
     aspect-ratio: 11 / 13;
     border: var(--ig-hairline) solid var(--ig-field-line);
-    border-radius: .625rem;
+    border-radius: var(--ig-radius-md);
     background: var(--ig-field);
     box-shadow: var(--ig-shadow-inset);
     color: var(--ig-fg);
-    font-size: 1.5rem;
+    font-size: var(--ig-text-3xl);
     font-weight: var(--ig-weight-semibold);
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -237,12 +236,12 @@
   /* A digit lands with a little spring. */
   .char { animation: land var(--ig-duration-slow) var(--ig-ease-spring); }
   @keyframes land {
-    from { opacity: 0; transform: translateY(3px) scale(.7); }
+    from { opacity: 0; transform: translateY(.1875rem) scale(.7); }
   }
   /* The caret blinks as a field's does; still, with reduced motion, whose
      durations are none. */
   .caret {
-    width: 2px;
+    width: .125rem;
     height: 1.15em;
     border-radius: 1px;
     background: var(--ig-accent);
@@ -253,13 +252,13 @@
   }
 
   .invalid .slot { border-color: var(--ig-red); }
-  .invalid .slot.active { box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--ig-red) 55%, transparent); }
+  .invalid .slot.active { box-shadow: 0 0 0 .21875rem color-mix(in srgb, var(--ig-red) 55%, transparent); }
   .invalid .slots { animation: shake calc(var(--ig-duration-arrive) * 1.5) ease; }
   @keyframes shake {
-    20% { transform: translateX(-6px); }
-    40% { transform: translateX(5px); }
-    60% { transform: translateX(-3px); }
-    80% { transform: translateX(2px); }
+    20% { transform: translateX(-.375rem); }
+    40% { transform: translateX(.3125rem); }
+    60% { transform: translateX(-.1875rem); }
+    80% { transform: translateX(.125rem); }
   }
 
   .disabled { opacity: .5; }
@@ -279,7 +278,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: .625rem;
+    border-radius: var(--ig-radius-md);
     outline: none;
     background: transparent;
     box-shadow: none;

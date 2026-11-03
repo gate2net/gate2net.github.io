@@ -60,12 +60,12 @@
     display: grid;
     place-items: center;
     flex: none;
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: .4375rem;
     color: var(--ig-on-accent);
     background: linear-gradient(160deg, color-mix(in srgb, var(--hue) 65%, var(--ig-light)), var(--hue));
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--hue) 40%, transparent);
+    box-shadow: 0 1px .125rem color-mix(in srgb, var(--hue) 40%, transparent);
   }
   dd {
     margin: var(--ig-space-3) 0 0;
@@ -76,7 +76,7 @@
     font-variant-numeric: tabular-nums;
   }
   @media (min-width: 640px) {
-    .columns-auto { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+    .columns-auto { grid-template-columns: repeat(auto-fill, minmax(10.625rem, 1fr)); }
     .columns-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     dd { font-size: var(--ig-text-lg); }
   }

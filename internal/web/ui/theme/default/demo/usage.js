@@ -377,7 +377,7 @@ export const USAGE = {
 </Card>
 
 <style scoped>
-  .form { display: grid; gap: var(--ig-space-7); max-width: 360px; }
+  .form { display: grid; gap: var(--ig-space-7); max-width: 22.5rem; }
   label { display: grid; gap: var(--ig-space-2); font-weight: var(--ig-weight-semibold); }
   p { margin: 0; }
 </style>
@@ -463,7 +463,7 @@ export const USAGE = {
 
 <style scoped>
   ul { margin: 0; padding: 0; list-style: none; }
-  li { display: flex; align-items: center; justify-content: space-between; max-width: 360px; padding: var(--ig-space-2) 0; }
+  li { display: flex; align-items: center; justify-content: space-between; max-width: 22.5rem; padding: var(--ig-space-2) 0; }
 </style>
 `,
   },

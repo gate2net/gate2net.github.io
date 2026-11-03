@@ -54,7 +54,13 @@
 
   let read = { dark: {}, light: {}, root: {} }
   const readTokens = () => {
-    const value = (el, name) => getComputedStyle(el).getPropertyValue("--ig-" + name).trim()
+    // A length in rem, with what it is here in px: on a phone the root's
+    // font size follows the window.
+    const root = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    const value = (el, name) => {
+      const v = getComputedStyle(el).getPropertyValue("--ig-" + name).trim()
+      return /^-?(\d*\.)?\d+rem$/.test(v) ? `${v} · ${+(parseFloat(v) * root).toFixed(2)}px` : v
+    }
     const dark = $self(".tone-dark"), light = $self(".tone-light")
     read = {
       dark: Object.fromEntries(TONED.map(n => [n, value(dark, n)])),
@@ -133,7 +139,7 @@
 <\/script>`,
     colours: `<!-- After tokens.css: a brand of your own, in both tones. -->
 <style>
-  :root { --ig-accent: #6d28d9; --ig-radius-control: 10px; }
+  :root { --ig-accent: #6d28d9; --ig-radius-control: .625rem; }
   [data-tone="light"] { --ig-link: #5b21b6; }
 </style>
 
@@ -251,7 +257,7 @@
         <div :each="t in TEXT" :key="t" class="type-row"><code>text-{{ t }}</code><small>{{ read.root['text-' + t] }}</small><span :data-paint="'font-size:text-' + t">myapp.gate.example.com</span></div>
       </div>
       <div class="type-rows">
-        <div :each="w in WEIGHTS" :key="w" class="type-row"><code>weight-{{ w }}</code><span :data-paint="'font-weight:weight-' + w">Register a subdomain</span></div>
+        <div :each="w in WEIGHTS" :key="w" class="type-row weight-row"><code>weight-{{ w }}</code><span :data-paint="'font-weight:weight-' + w">Register a subdomain</span></div>
       </div>
     </section>
 
@@ -477,11 +483,11 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--ig-space-9);
-    max-width: 1100px;
+    max-width: 68.75rem;
     margin: 0 auto;
-    padding: var(--ig-space-10) var(--ig-space-7) 80px;
+    padding: var(--ig-space-10) var(--ig-space-7) 5rem;
   }
-  .top { max-width: 760px; }
+  .top { max-width: 47.5rem; }
   .kicker { margin: 0; color: var(--ig-fg-muted); font-size: var(--ig-text-sm); font-weight: var(--ig-weight-semibold); text-transform: uppercase; letter-spacing: .06em; }
   h1 { margin: var(--ig-space-2) 0 var(--ig-space-3); font-size: var(--ig-text-4xl); letter-spacing: -.022em; }
   .lead { margin: 0; color: var(--ig-fg-muted); }
@@ -492,7 +498,7 @@
   h2 { margin: 0 0 var(--ig-space-1); font-size: var(--ig-text-2xl); letter-spacing: -.015em; }
   .section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ig-space-3) var(--ig-space-5); margin-bottom: var(--ig-space-1); }
   .section-head h2 { margin: 0; }
-  .about { margin: 0 0 var(--ig-space-6); color: var(--ig-fg-muted); max-width: 720px; }
+  .about { margin: 0 0 var(--ig-space-6); color: var(--ig-fg-muted); max-width: 45rem; }
   .sub { margin: var(--ig-space-7) 0 var(--ig-space-3); font-weight: var(--ig-weight-semibold); font-size: var(--ig-text-md); }
   .usage {
     margin: var(--ig-space-5) 0 0;
@@ -513,50 +519,53 @@
   .tone-dark { background: var(--ig-material-bar); box-shadow: inset 0 0 0 var(--ig-hairline) var(--ig-line); }
   .tone-light { background: var(--ig-material); box-shadow: var(--ig-shadow); }
   .tone-name { margin: 0 0 var(--ig-space-5); font-weight: var(--ig-weight-semibold); }
-  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--ig-space-4) var(--ig-space-5); }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr)); gap: var(--ig-space-4) var(--ig-space-5); }
   .swatch { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--ig-space-4); align-items: center; }
-  .swatch .chip { grid-row: span 2; width: 36px; height: 36px; border-radius: var(--ig-radius-control); box-shadow: inset 0 0 0 var(--ig-hairline) var(--ig-line); }
+  .swatch .chip { grid-row: span 2; width: 2.25rem; height: 2.25rem; border-radius: var(--ig-radius-control); box-shadow: inset 0 0 0 var(--ig-hairline) var(--ig-line); }
   .swatch code { font-size: var(--ig-text-sm); }
   .swatch small { color: var(--ig-fg-muted); font-size: var(--ig-text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .shared .chip { box-shadow: inset 0 0 0 1px var(--ig-line); }
 
-  .type-rows { display: grid; gap: var(--ig-space-2); margin-bottom: var(--ig-space-7); }
-  .type-row { display: grid; grid-template-columns: 140px 50px minmax(0, 1fr); gap: var(--ig-space-5); align-items: baseline; }
-  .type-row small { color: var(--ig-fg-muted); }
+  /* The rows share the columns, each as wide as its widest cell. */
+  .type-rows { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: var(--ig-space-2) var(--ig-space-5); margin-bottom: var(--ig-space-7); }
+  .type-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
+  .type-row small { color: var(--ig-fg-muted); white-space: nowrap; }
+  /* A weight has no size to give: its sample takes both columns. */
+  .weight-row span { grid-column: span 2; }
   .type-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .bars { display: grid; gap: var(--ig-space-2); }
-  .bar-row { display: grid; grid-template-columns: 90px auto 1fr; gap: var(--ig-space-5); align-items: center; }
-  .bar { height: 12px; border-radius: 3px; background: var(--ig-accent); }
+  .bar-row { display: grid; grid-template-columns: 5.625rem auto 1fr; gap: var(--ig-space-5); align-items: center; }
+  .bar { height: .75rem; border-radius: .1875rem; background: var(--ig-accent); }
   .bar-row small { color: var(--ig-fg-muted); }
   .shapes { display: flex; flex-wrap: wrap; gap: var(--ig-space-7); margin-bottom: var(--ig-space-7); padding: var(--ig-space-7); border-radius: var(--ig-radius-xl); background: var(--ig-material); }
-  .shape { display: grid; place-items: center; width: 120px; height: 72px; border-radius: var(--ig-radius-md); background: var(--ig-field); box-shadow: 0 0 0 var(--ig-hairline) var(--ig-field-line); color: var(--ig-fg); font-size: var(--ig-text-xs); }
+  .shape { display: grid; place-items: center; width: 7.5rem; height: 4.5rem; border-radius: var(--ig-radius-md); background: var(--ig-field); box-shadow: 0 0 0 var(--ig-hairline) var(--ig-field-line); color: var(--ig-fg); font-size: var(--ig-text-xs); }
   .controls { display: flex; flex-wrap: wrap; gap: var(--ig-space-5); align-items: flex-end; }
   .control { display: grid; place-items: center; padding: 0 var(--ig-space-5); border-radius: var(--ig-radius-control); background: var(--ig-fill); box-shadow: inset 0 0 0 var(--ig-hairline) var(--ig-line); font-size: var(--ig-text-xs); }
-  .motion { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--ig-space-3); margin: 0 0 var(--ig-space-5); }
+  .motion { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: var(--ig-space-3); margin: 0 0 var(--ig-space-5); }
   .motion div { padding: var(--ig-space-3) var(--ig-space-5); border-radius: var(--ig-radius-control); background: var(--ig-fill-2); }
   .motion dd { margin: var(--ig-space-1) 0 0; color: var(--ig-fg-muted); font-size: var(--ig-text-sm); }
 
-  .icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--ig-space-3); }
+  .icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: var(--ig-space-3); }
   .icon-cell { display: grid; justify-items: center; gap: var(--ig-space-3); padding: var(--ig-space-6) var(--ig-space-2); border-radius: var(--ig-radius-md); background: var(--ig-fill-2); }
   .icon-cell code { font-size: var(--ig-text-xs); color: var(--ig-fg-muted); }
 
   .both { margin-bottom: var(--ig-space-7); }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ig-space-4); }
   .row + .row { margin-top: var(--ig-space-5); }
-  .otp-demo { max-width: 360px; }
+  .otp-demo { max-width: 22.5rem; }
   .page-head-demo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--ig-space-5) var(--ig-space-7); }
   .page-head-demo h3 { margin: 0; font-size: var(--ig-text-4xl); letter-spacing: -.022em; }
   .muted { color: var(--ig-fg-muted); }
 
   @media (min-width: 900px) {
-    .page { grid-template-columns: 180px minmax(0, 1fr); }
+    .page { grid-template-columns: 11.25rem minmax(0, 1fr); }
     .top { grid-column: 1 / -1; }
     .index { display: block; position: sticky; top: var(--ig-space-7); align-self: start; }
     .index a {
       display: block;
       margin-left: calc(-1 * var(--ig-space-3));
-      padding: 3px var(--ig-space-3);
+      padding: .1875rem var(--ig-space-3);
       border-radius: var(--ig-radius-sm);
       color: var(--ig-fg-muted);
       font-size: var(--ig-text-md);
