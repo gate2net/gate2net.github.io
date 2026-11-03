@@ -16,6 +16,7 @@ export const TITLES = {
   switch: "Switch",
   segmented: "Segmented",
   "choice-cards": "ChoiceCards",
+  "otp-input": "OtpInput",
   tabs: "Tabs",
   modal: "Modal",
 }
@@ -332,6 +333,53 @@ export const USAGE = {
     color: var(--ig-fg);
     font-family: var(--ig-font-mono);
   }
+</style>
+`,
+  },
+
+  "otp-input": {
+    file: "code-form.html",
+    lead: "A one-time code from an email: one field under the boxes, so AutoFill and pasting fill it. The form submits itself once every box is filled; a wrong code turns the boxes red and selects it, to be typed again.",
+    code: `<script :setup>
+  // The code an email brought, checked as it is filled in. Here 123456 is
+  // the right one.
+  const Alert = await import("@theme/components/alert.html")
+  const Button = await import("@theme/components/button.html")
+  const Card = await import("@theme/components/card.html")
+  const OtpInput = await import("@theme/components/otp-input.html")
+
+  let code = ""
+  let error = ""
+  let busy = false
+  let done = false
+
+  const verify = () => {
+    if (busy) return
+    busy = true
+    error = ""
+    setTimeout(() => {
+      busy = false
+      if (code === "123456") done = true
+      else error = "That code is not right. Check the email and try again."
+    }, 400)
+  }
+</script>
+
+<Card title="Check your email">
+  <p :if="done">Signed in.</p>
+  <form :else class="form" @submit.prevent="verify">
+    <label>Code
+      <OtpInput :model="code" group="3" :invalid="!!error" @complete="verify()" />
+    </label>
+    <Button type="submit" block :disabled="busy">Sign in</Button>
+    <Alert :if="error" tone="bad" flush>{{ error }}</Alert>
+  </form>
+</Card>
+
+<style scoped>
+  .form { display: grid; gap: var(--ig-space-7); max-width: 360px; }
+  label { display: grid; gap: var(--ig-space-2); font-weight: var(--ig-weight-semibold); }
+  p { margin: 0; }
 </style>
 `,
   },

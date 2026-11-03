@@ -286,6 +286,15 @@
   }
 }
 
+/* On a phone the root's font size follows the window's width, 16px on one
+   390px wide, so what is sized in rem scales with it, as linearly on a
+   small phone as on a large one; past 439px, where a card stops growing,
+   it holds at 18px. The tokens are px and the body sets its own font, so
+   only what a component writes in rem moves: the OtpInput's boxes. */
+@media (max-width: 639.98px) {
+  html { font-size: min(calc(100vw / 24.375), 18px); }
+}
+
 /* Once, here, instead of a media query in every component: every transition
    and animation the components write takes its time from these. */
 @media (prefers-reduced-motion: reduce) {

@@ -15,6 +15,7 @@
   const Switch = await import("@theme/components/switch.html")
   const Segmented = await import("@theme/components/segmented.html")
   const ChoiceCards = await import("@theme/components/choice-cards.html")
+  const OtpInput = await import("@theme/components/otp-input.html")
   const Tabs = await import("@theme/components/tabs.html")
   const Modal = await import("@theme/components/modal.html")
   const { ICONS } = await import("@theme/icons.js")
@@ -26,7 +27,7 @@
   const GROUPS = [
     ["Foundations", [["setup", "Setup"], ["colours", "Colours"], ["type", "Type"], ["shape", "Space · Shape · Motion"], ["icons", "Icons"]]],
     ["Display", [["button", "Button"], ["badge", "Badge"], ["alert", "Alert"], ["card", "Card"], ["facts", "Facts"]]],
-    ["Forms", [["switch", "Switch"], ["segmented", "Segmented"], ["choice-cards", "ChoiceCards"]]],
+    ["Forms", [["switch", "Switch"], ["segmented", "Segmented"], ["choice-cards", "ChoiceCards"], ["otp-input", "OtpInput"]]],
     ["Navigation · Overlays", [["tabs", "Tabs"], ["modal", "Modal"]]],
   ]
 
@@ -80,6 +81,20 @@
   let os = "unix"
   let access = "public"
   let restricted = "only"
+  // A code on the wallpaper and one on a card: 123456 is the right one;
+  // any other is turned down a moment later, as a server would.
+  let otpWall = ""
+  let otpCard = ""
+  let wrongWall = false
+  let wrongCard = false
+  const checkWall = code => {
+    wrongWall = false
+    setTimeout(() => { wrongWall = code !== "123456" }, 300)
+  }
+  const checkCard = code => {
+    wrongCard = false
+    setTimeout(() => { wrongCard = code !== "123456" }, 300)
+  }
   let tab = "users"
   let modal = ""
 
@@ -389,6 +404,16 @@
       <Card title="Who can connect"><ChoiceCards name="demo-who" layout="stack" :model="restricted" :items="WHO" /></Card>
     </section>
 
+    <section id="otp-input" class="section">
+      <div class="section-head">
+        <h2>OtpInput</h2>
+        <Button variant="secondary" size="sm" icon="code" @click="inspect('otp-input')">Inspect</Button>
+      </div>
+      <p class="about">A one-time code, a box for each digit over one field: AutoFill and pasting fill it, and once every box is filled it says so. <code>123456</code> is right; any other code turns it red.</p>
+      <div class="both otp-demo"><OtpInput label="Code" :model="otpWall" group="3" :invalid="wrongWall" @complete="checkWall($event.detail)" /></div>
+      <Card><div class="otp-demo"><OtpInput label="Code" :model="otpCard" group="3" :invalid="wrongCard" @complete="checkCard($event.detail)" /></div></Card>
+    </section>
+
     <p class="group">Navigation · Overlays</p>
 
     <section id="tabs" class="section">
@@ -519,6 +544,7 @@
   .both { margin-bottom: var(--ig-space-7); }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ig-space-4); }
   .row + .row { margin-top: var(--ig-space-5); }
+  .otp-demo { max-width: 360px; }
   .page-head-demo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--ig-space-5) var(--ig-space-7); }
   .page-head-demo h3 { margin: 0; font-size: var(--ig-text-4xl); letter-spacing: -.022em; }
   .muted { color: var(--ig-fg-muted); }

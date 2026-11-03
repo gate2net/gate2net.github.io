@@ -1,0 +1,300 @@
+<script :setup="{ model = '', length = 6, group = 0, name = 'code', label = '', invalid = false, disabled = false, autofocus = false }">
+  // A one-time code, a box for each digit: the sign-in code, the setup's,
+  // the one that confirms a new SMTP relay.
+  //
+  // **Part of the default theme**: imports nothing, and draws only with
+  // `tokens.css`. See `RECORD/2026-10-29.a-design-system.completed.md`.
+  //
+  //   <form @submit.prevent="verify">
+  //     <label>Code
+  //       <OtpInput :model="code" group="3" :invalid="!!error" autofocus @complete="verify()" />
+  //     </label>
+  //   </form>
+  //
+  // **One field under the boxes.** A single `<input>`, its text and caret
+  // transparent, lies over the boxes, which only draw what it holds: so the
+  // platform's one-time-code AutoFill (`autocomplete="one-time-code"`: the
+  // code from Mail or Messages above the keyboard), pasting, a password
+  // manager and a screen reader each see one field, named by the `<label>`
+  // around it or by `label`, and Enter submits its form. What goes in keeps
+  // its digits only, as many as `length` (6): `123 456` and `123-456` are
+  // `123456` — so it has no `maxlength`, which would cut a pasted `123 456`
+  // to `123 45` first. The caret stays after the last digit (typing adds
+  // one, Backspace takes one back), and a selection is the whole code, so
+  // typing over it replaces it.
+  //
+  // **Pasting** (the keys, the menu, a long press): a whole code replaces
+  // what the boxes hold, even pasted among words — the email's subject,
+  // `123456 is your intergate sign-in code`, or `Code: 123 456.` — and a
+  // few digits go after the ones there. Nothing else is pasted.
+  //
+  // `group` draws a dash between every so many boxes (3: `123–456`).
+  // `invalid` turns the boxes red, shakes them once and selects the code,
+  // so the next keystroke starts again; the red goes as soon as the code
+  // changes. `autofocus` puts the caret in it when it appears, and
+  // `disabled` dims it and takes no more. The code goes up through
+  // `:model`, and as `complete` once every box is filled — a form can
+  // submit itself then.
+
+  const flag = v => v === "" || v === true || v === "true"
+  $: size = Math.max(1, parseInt(length, 10) || 6)
+  $: every = Math.max(0, parseInt(group, 10) || 0)
+  $: isInvalid = flag(invalid)
+  $: isDisabled = flag(disabled)
+
+  const clean = text => String(text ?? "").replace(/\D+/g, "").slice(0, size)
+
+  let value = ""
+  const take = code => { value = clean(code) }
+  $: take(model)
+
+  let focused = false
+  // The whole code is selected: the boxes are lit, and what comes next
+  // replaces it.
+  let all = false
+
+  // The code `invalid` is about: red until it changes.
+  let wrong = null
+  $: showsInvalid = wrong !== null && value === wrong
+
+  $: slots = Array.from({ length: size }, (_, i) => ({
+    key: "d" + i,
+    char: value[i] || "",
+    active: focused && !all && i === Math.min(value.length, size - 1),
+    caret: focused && !all && i === value.length,
+    selected: focused && all && i < value.length,
+  })).flatMap((slot, i) => every && i && i % every === 0 ? [{ key: "g" + i, sep: true }, slot] : [slot])
+
+  const field = () => $self("input")
+
+  // Where the caret may be: after the last digit, or around all of them.
+  const settle = () => {
+    const el = field()
+    if (!el || document.activeElement !== el) return
+    const end = el.value.length
+    if (el.selectionStart === el.selectionEnd) {
+      if (el.selectionStart !== end) el.setSelectionRange(end, end)
+      all = false
+    } else {
+      if (el.selectionStart !== 0 || el.selectionEnd !== end) el.setSelectionRange(0, end)
+      all = end > 0
+    }
+  }
+  // After the platform has placed the caret for a click or a focus.
+  const later = () => requestAnimationFrame(settle)
+
+  const enter = () => {
+    focused = true
+    later()
+  }
+  const leave = () => {
+    focused = false
+    all = false
+  }
+
+  // What the field holds, kept to digits, goes up.
+  const update = (el, text) => {
+    const next = clean(text)
+    if (el.value !== next) el.value = next
+    el.setSelectionRange(next.length, next.length)
+    all = false
+    if (next === value) return
+    value = next
+    $updateModel(next)
+    if (next.length === size) $emit("complete", next)
+  }
+  const input = event => update(event.target, event.target.value)
+
+  // A whole code in what was pasted: a run of digits, maybe split by
+  // spaces or dashes, exactly as long as the code.
+  const codeIn = text => (text.match(/\d(?:[\s\u2013-]?\d)*/g) || [])
+    .map(run => run.replace(/\D+/g, ""))
+    .find(run => run.length === size)
+  const paste = event => {
+    event.preventDefault()
+    const text = event.clipboardData?.getData("text") || ""
+    const code = codeIn(text)
+    const digits = text.replace(/\D+/g, "")
+    if (!code && !digits) return
+    const el = event.target
+    update(el, code || (all ? "" : el.value) + digits)
+  }
+
+  // Nothing moves the caret off the end, where the boxes draw it.
+  const MOVES = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]
+  const key = event => {
+    if (!MOVES.includes(event.key)) return
+    event.preventDefault()
+    const el = event.target
+    el.setSelectionRange(el.value.length, el.value.length)
+    all = false
+  }
+
+  // Turned down: red, and the code selected to be typed again.
+  const again = () => {
+    const el = field()
+    if (!el) return
+    wrong = el.value
+    if (el.disabled) return
+    el.focus()
+    el.setSelectionRange(0, el.value.length)
+    all = el.value.length > 0
+  }
+
+  await $mounted()
+  if (flag(autofocus)) field()?.focus()
+  $: isInvalid ? again() : (wrong = null)
+</script>
+
+<div class="otp" :class.focused="focused" :class.invalid="showsInvalid" :class.disabled="isDisabled">
+  <input class="field" type="text" inputmode="numeric" autocomplete="one-time-code"
+         autocapitalize="off" autocorrect="off" spellcheck="false" required
+         :name="name || null"
+         :aria-label="label || null"
+         :aria-invalid="showsInvalid ? 'true' : null"
+         :pattern="'[0-9]{' + size + '}'"
+         :disabled="isDisabled"
+         :value="value"
+         @input="input($event)"
+         @paste="paste($event)"
+         @keydown="key($event)"
+         @select="settle()"
+         @pointerup="later()"
+         @focus="enter()"
+         @blur="leave()">
+  <div class="slots" aria-hidden="true">
+    <span :each="slot in slots" :key="slot.key"
+          :class="slot.sep ? 'sep' : 'slot'"
+          :class.filled="!!slot.char"
+          :class.active="!!slot.active"
+          :class.selected="!!slot.selected">
+      <span :if="slot.char" class="char">{{ slot.char }}</span>
+      <span :if="slot.caret" class="caret"></span>
+    </span>
+  </div>
+</div>
+
+<style scoped>
+  /* Never wider than what holds it, though the boxes would be: as a grid's
+     or a row's item, it would otherwise take their whole width as its
+     least, and run past a phone's card. */
+  .otp {
+    position: relative;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    font-family: var(--ig-font-sans);
+  }
+
+  /* Sized in rem, so on a phone, where the root's font size follows the
+     window's width (`tokens.css`), the boxes scale with it: 44 by 52px on
+     a desktop, and six of them and a dash in the 314px a card leaves on a
+     390px phone. */
+  .slots {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4375rem;
+  }
+  /* A width, not a basis, so a row that sizes the field to its content (a
+     `flex: none` item) gets the boxes whole; narrower than that, they
+     shrink alike and keep their shape. */
+  .slot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: 0 1 auto;
+    width: 2.75rem;
+    min-width: 0;
+    aspect-ratio: 11 / 13;
+    border: var(--ig-hairline) solid var(--ig-field-line);
+    border-radius: .625rem;
+    background: var(--ig-field);
+    box-shadow: var(--ig-shadow-inset);
+    color: var(--ig-fg);
+    font-size: 1.5rem;
+    font-weight: var(--ig-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    transition: border-color var(--ig-duration) ease, box-shadow var(--ig-duration) ease, background-color var(--ig-duration) ease;
+  }
+  /* Where the next digit goes, as a focused field. */
+  .slot.active {
+    border-color: var(--ig-accent);
+    background: var(--ig-field-focus);
+    box-shadow: var(--ig-ring);
+  }
+  .slot.selected { background: color-mix(in srgb, var(--ig-accent) 22%, var(--ig-field-focus)); }
+  .sep {
+    flex: none;
+    width: .5rem;
+    height: .125rem;
+    border-radius: .0625rem;
+    background: var(--ig-fg-muted);
+    opacity: .5;
+  }
+
+  /* A digit lands with a little spring. */
+  .char { animation: land var(--ig-duration-slow) var(--ig-ease-spring); }
+  @keyframes land {
+    from { opacity: 0; transform: translateY(3px) scale(.7); }
+  }
+  /* The caret blinks as a field's does; still, with reduced motion, whose
+     durations are none. */
+  .caret {
+    width: 2px;
+    height: 1.15em;
+    border-radius: 1px;
+    background: var(--ig-accent);
+    animation: blink calc(var(--ig-duration) * 7) step-end infinite;
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  .invalid .slot { border-color: var(--ig-red); }
+  .invalid .slot.active { box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--ig-red) 55%, transparent); }
+  .invalid .slots { animation: shake calc(var(--ig-duration-arrive) * 1.5) ease; }
+  @keyframes shake {
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(5px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+
+  .disabled { opacity: .5; }
+
+  /* The field itself: over the boxes, as big as they are, so a click or a
+     tap anywhere on them lands in it, and invisible but for its focus. A
+     page styles its fields with rules of its own (the dashboard's are
+     `input:not([type=radio]):not([type=checkbox])`, and `:focus`), which
+     this one has to outweigh. Its text is 16px: iOS zooms into a smaller
+     one. */
+  .otp input.field:not([type=radio]):not([type=checkbox]) {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: .625rem;
+    outline: none;
+    background: transparent;
+    box-shadow: none;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: transparent;
+    font: 16px/1 var(--ig-font-mono);
+    letter-spacing: -.5em;
+    cursor: text;
+    transition: none;
+  }
+  .otp input.field:disabled { cursor: default; }
+  .field::selection { background: transparent; color: transparent; }
+  /* Filled in by the browser, a field paints a colour of its own over
+     everything: then it hides, and the boxes show the code. */
+  .otp input.field:autofill { opacity: 0; }
+  .otp input.field:-webkit-autofill { opacity: 0; }
+</style>

@@ -14,6 +14,7 @@
   const Facts = await import("@theme/components/facts.html")
   const Icon = await import("@theme/components/icon.html")
   const Modal = await import("@theme/components/modal.html")
+  const OtpInput = await import("@theme/components/otp-input.html")
   const Switch = await import("@theme/components/switch.html")
   const Tabs = await import("@theme/components/tabs.html")
 
@@ -171,7 +172,9 @@
     }
     relayBusy = false
   }
+  // From the button, Enter, or the last digit typed or filled in.
   const confirmRelay = async () => {
+    if (relayBusy) return
     relayBusy = true
     relayError = ""
     try {
@@ -322,15 +325,13 @@
   <p :elseif="!relay.editable" class="hint">Only owners can change it.</p>
 
   <div :elseif="relay.pending">
-    <Alert :if="relayError" tone="bad">{{ relayError }}</Alert>
     <p>We sent a code to <strong>{{ relay.pending }}</strong> through the new SMTP relay. Enter it to save the relay; until then, the one above stays.</p>
     <form class="form form-row" @submit.prevent="confirmRelay">
-      <input class="code-input relay-code" name="code" required inputmode="numeric" autocomplete="one-time-code"
-             pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123456" aria-label="Code"
-             :value="relayCode" @input="relayCode = $event.target.value">
+      <OtpInput label="Code" :model="relayCode" group="3" :invalid="!!relayError" @complete="confirmRelay()" />
       <Button type="submit" :disabled="relayBusy">Save the new relay</Button>
     </form>
     <p class="small muted">Didn’t get it? Check your spam folder, or <button type="button" class="link" @click="cancelRelay">cancel the change</button>.</p>
+    <Alert :if="relayError" tone="bad">{{ relayError }}</Alert>
   </div>
 
   <form :elseif="editingRelay" class="form" @submit.prevent="proposeRelay">
