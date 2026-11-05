@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -57,7 +58,33 @@ func newExec(o Options, env Env) (Provider, error) {
 	} else if fi.IsDir() || runtime.GOOS != "windows" && fi.Mode().Perm()&0o111 == 0 {
 		return nil, fmt.Errorf("exec: %s is not an executable file", p.command)
 	}
+	if interp := interpreter(p.command); interp != "" {
+		if _, err := os.Stat(interp); err != nil {
+			return nil, fmt.Errorf("exec: %s is a script for %s, which this system does not have "+
+				"(intergate's Docker image has no shell): use a program that runs on its own, or a built-in provider", p.command, interp)
+		}
+	}
 	return p, nil
+}
+
+// interpreter returns the program a script's #! line names, or "".
+func interpreter(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	head := make([]byte, 256)
+	n, _ := io.ReadFull(f, head)
+	line, _, _ := strings.Cut(string(head[:n]), "\n")
+	rest, ok := strings.CutPrefix(line, "#!")
+	if !ok {
+		return ""
+	}
+	if fields := strings.Fields(rest); len(fields) > 0 {
+		return fields[0]
+	}
+	return ""
 }
 
 func (p *execProvider) run(ctx context.Context, args ...string) error {

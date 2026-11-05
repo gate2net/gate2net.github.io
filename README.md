@@ -285,7 +285,20 @@ The zone is found from the domain (the provider's zone for
 `gate.example.com` or `example.com`), unless its ID is given. The DNS tab
 is there when intergate gets its certificates from Let's Encrypt
 (`http.tls.acme`): with your own wildcard certificate, or a reverse proxy in
-front, there is nothing for it to do.
+front, there is nothing for it to do. So:
+
+- **Binary and systemd service:** all of it. Secrets the configuration file
+  refers to as `${VAR}` go in `/etc/intergate/intergate.env`. The service's
+  sandbox hides home directories: for Google Cloud, upload the key in the
+  dashboard, point `GOOGLE_APPLICATION_CREDENTIALS` at a file the
+  `intergate` user can read, or use the VM's service account.
+- **Docker:** all of it, with the certificate kept in the `/data` volume.
+  The image has no shell, so an `exec` provider must be a program that runs
+  on its own (a static binary in `/data`), not a script; intergate says so
+  when it starts.
+- **Kubernetes (Helm):** Traefik terminates TLS, so the wildcard
+  certificate comes from Traefik's DNS-01 resolver or cert-manager, as
+  before, and the DNS tab does not show.
 
 The configuration file can set the provider instead, and then wins over the
 dashboard, which shows it read-only:

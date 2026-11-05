@@ -41,6 +41,12 @@ func TestExec(t *testing.T) {
 		t.Errorf("failure: %v", err)
 	}
 
+	// A script whose interpreter is missing, as in the Docker image.
+	os.WriteFile(filepath.Join(dir, "noshell.sh"), []byte("#!/nonexistent/sh -e\necho\n"), 0o755)
+	if _, err := New("exec", Options{"command": filepath.Join(dir, "noshell.sh")}, Env{}); err == nil || !strings.Contains(err.Error(), "script for /nonexistent/sh") {
+		t.Errorf("missing interpreter: %v", err)
+	}
+
 	os.WriteFile(filepath.Join(dir, "plain"), []byte("x"), 0o644)
 	if _, err := New("exec", Options{"command": filepath.Join(dir, "plain")}, Env{}); err == nil {
 		t.Error("a file that is not executable accepted")
