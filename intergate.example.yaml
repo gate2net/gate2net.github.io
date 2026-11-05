@@ -30,7 +30,8 @@ http:
     # Expect a PROXY protocol header on every HTTPS connection, from a load
     # balancer or a proxy that passes TLS through (Traefik's passthrough).
     # proxy_protocol: false
-  # Trust X-Forwarded-For from a reverse proxy you control.
+  # Trust X-Forwarded-For from a reverse proxy you control, connecting
+  # from one of the trusted_proxies.
   trust_proxy_headers: false
 
 ssh:
@@ -133,6 +134,13 @@ limits:
 #   wildcard_record: true     # also point *.gate.example.com at gate.example.com (CNAME)
 #   # propagation_timeout: 2m # how long the nameservers may take to serve the records
 #   # nameservers: [ns1.example.net]   # ask these instead of the zone's own
+
+# The addresses (IPs or CIDR ranges) your proxies and load balancers connect
+# from: only they may tell intergate a client's address, with
+# X-Forwarded-For (http.trust_proxy_headers) or a PROXY header
+# (ssh.proxy_protocol, http.tls.proxy_protocol). Default: loopback and
+# private networks.
+# trusted_proxies: [127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, "::1/128", "fc00::/7"]
 
 # Names nobody can register, on top of the built-in list (www, admin, api...).
 reserved_subdomains: []

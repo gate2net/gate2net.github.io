@@ -14,9 +14,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	texttemplate "text/template"
 	"time"
 
@@ -82,23 +84,26 @@ type Server struct {
 	dnsEnv    dns.Env
 	// wildcardCheck caches whether *.<domain> resolves.
 	wildcardCheck wildcardCheck
-	log           *slog.Logger
-	signer        signer
-	nonces        *nonceSet
-	codes         *codeStore
-	webauthn      *webauthn.WebAuthn
-	cookies       cookieNames
-	providers     []provider
-	shell         *template.Template
-	theme         *template.Template
-	tunnelErr     *template.Template
-	tunnelSh      *texttemplate.Template
-	tunnelPs      *texttemplate.Template
-	hostKey       string
-	ui            map[string]uiFile
-	dashboard     http.Handler
-	proxy         *httputil.ReverseProxy
-	version       string
+	// untrusted throttles the warnings about X-Forwarded-For from
+	// connections that are not trusted proxies'.
+	untrusted throttle
+	log       *slog.Logger
+	signer    signer
+	nonces    *nonceSet
+	codes     *codeStore
+	webauthn  *webauthn.WebAuthn
+	cookies   cookieNames
+	providers []provider
+	shell     *template.Template
+	theme     *template.Template
+	tunnelErr *template.Template
+	tunnelSh  *texttemplate.Template
+	tunnelPs  *texttemplate.Template
+	hostKey   string
+	ui        map[string]uiFile
+	dashboard http.Handler
+	proxy     *httputil.ReverseProxy
+	version   string
 }
 
 type cookieNames struct {
@@ -422,7 +427,8 @@ func (s *Server) sameOrigin(next http.HandlerFunc) http.Handler {
 
 // clientIP is the visitor's address, for rate limiting and logs.
 func (s *Server) clientIP(r *http.Request) string {
-	if s.cfg.HTTP.TrustProxyHeaders {
+	host := peerHost(r)
+	if s.trustsForwarded(r, host) {
 		// The last entry was added by the proxy we trust.
 		if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
 			parts := strings.Split(xff[len(xff)-1], ",")
@@ -431,11 +437,54 @@ func (s *Server) clientIP(r *http.Request) string {
 			}
 		}
 	}
+	return host
+}
+
+// peerHost is the address the request came from: a proxy's, or the
+// client's.
+func peerHost(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// trustsForwarded reports whether X-Forwarded-For from this peer tells the
+// client's address: with http.trust_proxy_headers, and from one of the
+// trusted_proxies. A header from anyone else is ignored, and logged now and
+// then, so a proxy left out of trusted_proxies shows.
+func (s *Server) trustsForwarded(r *http.Request, peer string) bool {
+	if !s.cfg.HTTP.TrustProxyHeaders {
+		return false
+	}
+	if ip, err := netip.ParseAddr(peer); err == nil && s.cfg.TrustedProxy(ip) {
+		return true
+	}
+	if len(r.Header.Values("X-Forwarded-For")) > 0 && s.untrusted.due(peer) {
+		s.log.Warn("X-Forwarded-For ignored: the connection does not come from trusted_proxies", "from", peer)
+	}
+	return false
+}
+
+// throttle tells when to log about a key again: once an hour.
+type throttle struct {
+	mu   sync.Mutex
+	last map[string]time.Time
+}
+
+func (t *throttle) due(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	if t.last == nil || len(t.last) > 1000 {
+		t.last = map[string]time.Time{}
+	}
+	if now.Sub(t.last[key]) < time.Hour {
+		return false
+	}
+	t.last[key] = now
+	return true
 }
 
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {

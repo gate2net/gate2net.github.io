@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/mail"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -42,7 +43,61 @@ type Config struct {
 	// built-in list (www, admin, api, ...).
 	ReservedSubdomains []string `yaml:"reserved_subdomains"`
 
+	// TrustedProxies are the addresses (IPs or CIDR ranges) the proxies and
+	// load balancers in front of intergate connect from. Only they may tell
+	// it a client's address: with X-Forwarded-For (http.trust_proxy_headers)
+	// or a PROXY protocol header (ssh.proxy_protocol,
+	// http.tls.proxy_protocol). Defaults to loopback and private networks.
+	TrustedProxies []string `yaml:"trusted_proxies"`
+
 	publicURL *url.URL
+	trusted   []netip.Prefix
+}
+
+// DefaultTrustedProxies are loopback and private networks: where a proxy on
+// the same machine, a container network or a cluster's pods connect from.
+var DefaultTrustedProxies = []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}
+
+// TrustedProxy reports whether a connection from ip may tell intergate a
+// client's address.
+func (c *Config) TrustedProxy(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	for _, p := range c.trusted {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// TrustedProxyRanges returns the trusted proxies as CIDR ranges.
+func (c *Config) TrustedProxyRanges() []string {
+	out := make([]string, len(c.trusted))
+	for i, p := range c.trusted {
+		out[i] = p.String()
+	}
+	return out
+}
+
+func (c *Config) parseTrustedProxies() error {
+	list := c.TrustedProxies
+	if len(list) == 0 {
+		list = DefaultTrustedProxies
+	}
+	c.trusted = nil
+	for _, s := range list {
+		s = strings.TrimSpace(s)
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			ip, ierr := netip.ParseAddr(s)
+			if ierr != nil {
+				return fmt.Errorf("trusted_proxies: %q is not an IP address or a CIDR range like 10.0.0.0/8", s)
+			}
+			p = netip.PrefixFrom(ip.Unmap(), ip.Unmap().BitLen())
+		}
+		c.trusted = append(c.trusted, p.Masked())
+	}
+	return nil
 }
 
 type HTTPConfig struct {
@@ -50,8 +105,9 @@ type HTTPConfig struct {
 	// redirects to HTTPS (and answers ACME HTTP-01 challenges).
 	Listen string    `yaml:"listen"`
 	TLS    TLSConfig `yaml:"tls"`
-	// TrustProxyHeaders keeps incoming X-Forwarded-For headers. Enable it
-	// only when intergate runs behind a reverse proxy you control.
+	// TrustProxyHeaders keeps incoming X-Forwarded-For headers, from the
+	// trusted_proxies only. Enable it when intergate runs behind a reverse
+	// proxy you control.
 	TrustProxyHeaders bool `yaml:"trust_proxy_headers"`
 }
 
@@ -483,6 +539,9 @@ func (c *Config) validate() error {
 		}
 	}
 	if err := c.validateDNS(); err != nil {
+		return err
+	}
+	if err := c.parseTrustedProxies(); err != nil {
 		return err
 	}
 	return c.TCP.parse()

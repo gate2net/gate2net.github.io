@@ -267,7 +267,8 @@ auth:
 	defer srv.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go srv.Run(ctx)
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
 
 	pool := x509.NewCertPool()
 	cert, _ := x509.ParseCertificate(der)
@@ -313,6 +314,41 @@ auth:
 		resp.Body.Close()
 		t.Errorf("served without a PROXY header: %d", resp.StatusCode)
 	}
+
+	// From an address that is not a trusted proxy, not even with a header.
+	cancel()
+	<-done // the port is free again
+	cfg, err = config.Parse(fmt.Appendf(nil, `
+public_url: https://gate.test
+data_dir: %s
+trusted_proxies: [192.0.2.0/24]
+http:
+  listen: "%s"
+  tls: {listen: "%s", cert_file: %s/cert.pem, key_file: %s/key.pem, proxy_protocol: true}
+ssh: {listen: "%s"}
+auth:
+  admins: [admin@example.com]
+  email: {log_only: true}
+`, t.TempDir(), freePort(t), httpsAddr, dir, dir, freePort(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs2 syncBuffer
+	srv2, err := New(cfg, slog.New(slog.NewTextHandler(&logs2, nil)), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv2.Close()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go srv2.Run(ctx2)
+	waitFor(t, func() bool {
+		if resp, err := client.Get("https://gate.test/login"); err == nil {
+			resp.Body.Close()
+			t.Fatal("served a PROXY header from an untrusted address")
+		}
+		return strings.Contains(logs2.String(), "only taken from trusted_proxies")
+	})
 
 	if _, err := config.Parse([]byte("public_url: https://gate.test\nhttp:\n  tls: {proxy_protocol: true}\n")); err == nil {
 		t.Error("proxy_protocol accepted without TLS")

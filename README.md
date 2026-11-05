@@ -536,8 +536,12 @@ Highlights:
   asks for the owner.
 - `ssh.proxy_protocol`, `http.tls.proxy_protocol`: expect a PROXY protocol
   header from a load balancer, or from a proxy that passes TLS through.
-  Only when that proxy is the only way to the port: a header tells
-  intergate the client's address.
+- `trusted_proxies`: the addresses (IPs or CIDR ranges) your proxies and load
+  balancers connect from; loopback and private networks by default. Only
+  they may tell intergate a client's address, with `X-Forwarded-For` or a
+  PROXY header. Set it when a proxy reaches intergate from a public address
+  (a load balancer outside your private network, a cluster whose pods have
+  public IPv6 addresses).
 - `dns`: a DNS provider for [one wildcard
   certificate](#wildcard-certificate-and-dns-providers), with
   `http.tls.acme`. Without it, owners can set one up from the dashboard.
@@ -601,6 +605,14 @@ auth:
   The dashboard can't set what runs a program or reads a file on the
   server (`exec`, `credentials_file`): a stolen owner session can't turn
   into code execution.
+- **Client addresses** are what limits sign-in codes per address, what the
+  logs show and what apps behind tunnels get in `X-Forwarded-For`. A proxy
+  can only tell them from `trusted_proxies` (loopback and private networks
+  by default): `X-Forwarded-For` from anywhere else is ignored, and a
+  listener with the PROXY protocol refuses connections from anywhere else
+  and requires the header from the proxies, so a proxy that stops sending it
+  fails at once instead of making every visitor share its address. Both are
+  logged, at most once an hour per address.
 - **TCP ports** check every connection's address against the port's allow
   list, which needs the real client address: publish the range directly, or
   keep it (`externalTrafficPolicy: Local`) behind a load balancer. Data is

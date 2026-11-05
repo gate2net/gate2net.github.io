@@ -332,11 +332,11 @@ func (s *Server) Run(ctx context.Context) error {
 			return err
 		}
 		if tlsCfg.ProxyProtocol {
-			httpsLn = &proxyproto.Listener{Listener: httpsLn, ReadHeaderTimeout: 10 * time.Second}
+			httpsLn = &proxyproto.Listener{Listener: httpsLn, ReadHeaderTimeout: 10 * time.Second, ConnPolicy: s.proxyPolicy("https")}
 		}
 	}
 	if cfg.SSH.ProxyProtocol {
-		sshLn = &proxyproto.Listener{Listener: sshLn, ReadHeaderTimeout: 10 * time.Second}
+		sshLn = &proxyproto.Listener{Listener: sshLn, ReadHeaderTimeout: 10 * time.Second, ConnPolicy: s.proxyPolicy("ssh")}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -378,6 +378,9 @@ func (s *Server) Run(ctx context.Context) error {
 		"ssh_host_key", ssh.FingerprintSHA256(s.hostKey.PublicKey()),
 		"sign_in", strings.Join(methods, ","),
 		"admin_socket", cfg.Admin.Socket)
+	if cfg.HTTP.TrustProxyHeaders || cfg.SSH.ProxyProtocol || cfg.HTTP.TLS.ProxyProtocol {
+		log.Info("client addresses from trusted proxies", "trusted_proxies", strings.Join(cfg.TrustedProxyRanges(), ","))
+	}
 	if cfg.TCP.Enabled() {
 		log.Info("tcp ports enabled", "range", cfg.TCP.Ports, "per_subdomain", cfg.TCP.MaxPorts, "address", cfg.TCPAddress(0))
 	}
@@ -432,6 +435,38 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-shutdownCtx.Done():
 	}
 	return runErr
+}
+
+// proxyPolicy takes PROXY protocol headers from the trusted proxies only,
+// and requires one from them: connections from anywhere else are refused
+// (and logged now and then, so a proxy left out of trusted_proxies shows).
+func (s *Server) proxyPolicy(listener string) proxyproto.ConnPolicyFunc {
+	// The ranges were checked when the configuration was parsed.
+	trusted, _ := proxyproto.TrustProxyHeaderFromRanges(s.cfg.TrustedProxyRanges())
+	var mu sync.Mutex
+	last := map[string]time.Time{}
+	return func(o proxyproto.ConnPolicyOptions) (proxyproto.Policy, error) {
+		p, err := trusted(o)
+		if err != nil {
+			from := o.Upstream.String()
+			if host, _, herr := net.SplitHostPort(from); herr == nil {
+				from = host
+			}
+			mu.Lock()
+			if len(last) > 1000 {
+				clear(last)
+			}
+			due := time.Since(last[from]) > time.Hour
+			if due {
+				last[from] = time.Now()
+			}
+			mu.Unlock()
+			if due {
+				s.log.Warn("connection refused: PROXY protocol headers are only taken from trusted_proxies", "listener", listener, "from", from)
+			}
+		}
+		return p, err
+	}
 }
 
 // adoptLegacyDatabase renames the database of gate2net or gate2sky,

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -210,6 +211,36 @@ func TestDNS(t *testing.T) {
 		} else if name == "misspelled key" && !strings.Contains(err.Error(), "dns.cloudfare") {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+}
+
+func TestTrustedProxies(t *testing.T) {
+	t.Setenv("TEST_SECRET", "x")
+	cfg, err := Parse([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ip, want := range map[string]bool{
+		"127.0.0.1": true, "::1": true, "10.42.0.7": true, "172.31.255.1": true, "192.168.1.2": true,
+		"fd00::1": true, "::ffff:10.0.0.1": true,
+		"203.0.113.5": false, "172.32.0.1": false, "2001:db8::1": false, "100.64.0.1": false,
+	} {
+		if got := cfg.TrustedProxy(netip.MustParseAddr(ip)); got != want {
+			t.Errorf("TrustedProxy(%s) = %v by default", ip, got)
+		}
+	}
+	cfg, err = Parse([]byte(base + "trusted_proxies: [203.0.113.5, \"2001:db8::/32\", 198.51.100.0/24]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.TrustedProxyRanges(); !slices.Equal(got, []string{"203.0.113.5/32", "2001:db8::/32", "198.51.100.0/24"}) {
+		t.Errorf("ranges %v", got)
+	}
+	if cfg.TrustedProxy(netip.MustParseAddr("10.0.0.1")) || !cfg.TrustedProxy(netip.MustParseAddr("2001:db8::7")) {
+		t.Error("a list replaces the default")
+	}
+	if _, err := Parse([]byte(base + "trusted_proxies: [my-proxy]\n")); err == nil {
+		t.Error("a host name accepted in trusted_proxies")
 	}
 }
 

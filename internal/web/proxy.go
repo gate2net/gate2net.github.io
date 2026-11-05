@@ -54,7 +54,7 @@ func (s *Server) newProxy() *httputil.ReverseProxy {
 			pr.Out.URL.Scheme = "http"
 			pr.Out.URL.Host = pr.In.Host
 			pr.Out.Host = pr.In.Host
-			if s.cfg.HTTP.TrustProxyHeaders {
+			if s.trustsForwarded(pr.In, peerHost(pr.In)) {
 				if prior := pr.In.Header["X-Forwarded-For"]; len(prior) > 0 {
 					pr.Out.Header["X-Forwarded-For"] = prior
 				}
