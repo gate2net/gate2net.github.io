@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -223,6 +225,101 @@ auth:
 			t.Errorf("dashboard over HTTPS: %d %v", resp.StatusCode, resp.Header)
 		}
 	}
+}
+
+// TestHTTPSProxyProtocol checks that with http.tls.proxy_protocol the
+// client address comes from the PROXY header, as when Traefik passes TLS
+// through to intergate.
+func TestHTTPSProxyProtocol(t *testing.T) {
+	dir := t.TempDir()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		DNSNames:     []string{"gate.test", "*.gate.test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, _ := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	keyDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	os.WriteFile(filepath.Join(dir, "cert.pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600)
+	os.WriteFile(filepath.Join(dir, "key.pem"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600)
+
+	httpAddr, httpsAddr, sshAddr := freePort(t), freePort(t), freePort(t)
+	cfg, err := config.Parse(fmt.Appendf(nil, `
+public_url: https://gate.test
+data_dir: %s
+http:
+  listen: "%s"
+  tls: {listen: "%s", cert_file: %s/cert.pem, key_file: %s/key.pem, proxy_protocol: true}
+ssh: {listen: "%s"}
+auth:
+  admins: [admin@example.com]
+  email: {log_only: true}
+`, dir, httpAddr, httpsAddr, dir, dir, sshAddr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs syncBuffer
+	srv, err := New(cfg, slog.New(slog.NewTextHandler(&logs, nil)), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go srv.Run(ctx)
+
+	pool := x509.NewCertPool()
+	cert, _ := x509.ParseCertificate(der)
+	pool.AddCert(cert)
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool},
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			conn, err := (&net.Dialer{}).DialContext(ctx, network, httpsAddr)
+			if err == nil {
+				_, err = proxyproto.HeaderProxyFromAddrs(2,
+					&net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 40000},
+					&net.TCPAddr{IP: net.ParseIP("10.0.0.2"), Port: 443}).WriteTo(conn)
+			}
+			return conn, err
+		},
+	}}
+	// An address that may not sign in is logged with the client's.
+	waitFor(t, func() bool {
+		req, _ := http.NewRequest("POST", "https://gate.test/api/login/email", strings.NewReader(`{"email":"stranger@elsewhere.test"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://gate.test")
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		resp.Body.Close()
+		return strings.Contains(logs.String(), "may not sign in")
+	})
+	if !strings.Contains(logs.String(), "ip=203.0.113.9") {
+		t.Errorf("client address not taken from the PROXY header:\n%s", logs.String())
+	}
+
+	if _, err := config.Parse([]byte("public_url: https://gate.test\nhttp:\n  tls: {proxy_protocol: true}\n")); err == nil {
+		t.Error("proxy_protocol accepted without TLS")
+	}
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 func TestAdoptLegacyDatabase(t *testing.T) {

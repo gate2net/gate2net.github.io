@@ -12,6 +12,11 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    {{- if eq (include "intergate.passthrough" .) "true" }}
+    - name: https
+      port: 8443
+      targetPort: https
+    {{- end }}
     - name: ssh
       port: 2222
       targetPort: ssh

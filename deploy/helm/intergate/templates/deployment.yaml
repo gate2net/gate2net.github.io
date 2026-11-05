@@ -46,6 +46,10 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            {{- if eq (include "intergate.passthrough" .) "true" }}
+            - name: https
+              containerPort: 8443
+            {{- end }}
             - name: ssh
               containerPort: 2222
           readinessProbe:

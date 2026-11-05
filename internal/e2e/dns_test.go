@@ -238,6 +238,13 @@ func TestWildcardCertificateFromTheDashboard(t *testing.T) {
 	if !ownerBoot.Wildcard || ownerBoot.User.Role != "owner" {
 		t.Fatalf("boot %+v", ownerBoot)
 	}
+	// A new subdomain gets its certificate as it is registered, before
+	// anyone visits it.
+	if resp, body := h.send(owner, "POST", "/api/subdomains", map[string]string{"name": "early"}, ownerBoot.CSRF); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("register: %d %s", resp.StatusCode, body)
+	}
+	waitIssued(t, h.ca, "early."+domain)
+
 	u, _ := h.srv.Store().EnsureUser(ctx, "helper@example.com")
 	h.srv.Store().SetUserRole(ctx, u.ID, store.RoleAdmin)
 	helperBoot := h.login(helper, "helper@example.com")
@@ -310,6 +317,15 @@ func TestWildcardCertificateFromTheDashboard(t *testing.T) {
 	if v := h.ca.Zone.Values("*."+domain, "CNAME"); !slices.Equal(v, []string{domain}) {
 		t.Errorf("wildcard record %v", v)
 	}
+	// With it, new subdomains need no certificate of their own.
+	issued := len(h.ca.Issued())
+	if resp, body := h.send(owner, "POST", "/api/subdomains", map[string]string{"name": "late"}, ownerBoot.CSRF); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("register: %d %s", resp.StatusCode, body)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := len(h.ca.Issued()); n != issued {
+		t.Errorf("%d certificates issued for a subdomain the wildcard covers", n-issued)
+	}
 	// The token is sealed in the database.
 	if raw, _ := h.srv.Store().Setting(ctx, "dns"); strings.Contains(raw, `"good"`) {
 		t.Errorf("token stored in the clear: %s", raw)
@@ -328,6 +344,21 @@ func TestWildcardCertificateFromTheDashboard(t *testing.T) {
 	}
 	if c := h.certificate("myapp." + domain); !slices.Contains(c.DNSNames, "*."+domain) {
 		t.Errorf("after removing: certificate for %v", c.DNSNames)
+	}
+}
+
+// waitIssued waits until the CA has issued a certificate for exactly host.
+func waitIssued(t *testing.T, ca *acmetest.Server, host string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		for _, c := range ca.Issued() {
+			if slices.Equal(c.DNSNames, []string{host}) {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no certificate issued for %s", host)
+		}
 	}
 }
 

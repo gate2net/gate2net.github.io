@@ -202,8 +202,8 @@ configuration, sign in at `https://gate.example.com` with an administrator
 email), register a subdomain, paste your public key (`~/.ssh/id_ed25519.pub`)
 and connect with the `ssh -R` command the dashboard shows.
 
-With Let's Encrypt, the dashboard and each subdomain get a certificate of
-their own on their first visit. For [one wildcard
+With Let's Encrypt, the dashboard gets a certificate on its first visit, and
+each subdomain as it is registered. For [one wildcard
 certificate](#wildcard-certificate-and-dns-providers) instead, set up your
 DNS provider in the dashboard: **Admin → DNS**.
 
@@ -247,10 +247,10 @@ Apple's AutoFill find it.
 ### Wildcard certificate and DNS providers
 
 Out of the box, intergate gets a Let's Encrypt certificate for the dashboard
-and for each subdomain on its first visit (HTTP-01 or TLS-ALPN-01): nothing
-to set up, but every new subdomain waits a few seconds for its certificate,
-its name lands in the public Certificate Transparency logs, and Let's
-Encrypt allows 50 certificates a week per domain.
+on its first visit, and for each subdomain as it is registered (HTTP-01 or
+TLS-ALPN-01; a failure is tried again on the first visit): nothing to set
+up, but every name lands in the public Certificate Transparency logs, and
+Let's Encrypt allows 50 new certificates a week per domain.
 
 With a DNS provider, intergate gets **one certificate for `gate.example.com`
 and `*.gate.example.com`** instead, through ACME's DNS-01 challenge: it adds
@@ -296,9 +296,11 @@ front, there is nothing for it to do. So:
   The image has no shell, so an `exec` provider must be a program that runs
   on its own (a static binary in `/data`), not a script; intergate says so
   when it starts.
-- **Kubernetes (Helm):** Traefik terminates TLS, so the wildcard
-  certificate comes from Traefik's DNS-01 resolver or cert-manager, as
-  before, and the DNS tab does not show.
+- **Kubernetes (Helm):** with `traefik.tls.passthrough`, all of it:
+  Traefik passes TLS through to intergate. In the chart's default mode,
+  Traefik terminates TLS, so the wildcard certificate comes from Traefik's
+  DNS-01 resolver or cert-manager, set up as you install, and the DNS tab
+  does not show. See [Kubernetes with Traefik](#kubernetes-with-traefik).
 
 The configuration file can set the provider instead, and then wins over the
 dashboard, which shows it read-only:
@@ -401,9 +403,8 @@ and to the classic repository `https://jgermade.github.io/intergate/charts`
 (for tools without OCI support, such as helm-dashboard), so there is nothing
 to clone (from a clone, `deploy/helm/intergate` works the same):
 
-- an `IngressRoute` for `gate.example.com` and its subdomains (TLS from a
-  Traefik resolver with a DNS-01 challenge, an existing wildcard secret, or
-  cert-manager);
+- an `IngressRoute` for `gate.example.com` and its subdomains, with TLS
+  from Traefik or from intergate itself (see below);
 - an `IngressRouteTCP` on a dedicated Traefik entry point for SSH, with the
   PROXY protocol so intergate sees client addresses — or a `LoadBalancer`
   Service instead;
@@ -412,10 +413,36 @@ to clone (from a clone, `deploy/helm/intergate` works the same):
   `externalTrafficPolicy: Local` so allow lists see client addresses. Keep
   the range small: it is one or two Service ports each.
 
+Who terminates TLS is the choice to make:
+
+- **Traefik** (the default): it needs a certificate for `gate.example.com`
+  and `*.gate.example.com` from the start — a Traefik resolver with a
+  DNS-01 challenge (`traefik.tls.certResolver`), an existing wildcard
+  secret (`traefik.tls.secretName`) or cert-manager (`certManager`) — with
+  the DNS provider's credentials in Traefik's or cert-manager's
+  configuration. Traefik's HTTP middlewares and access logs apply, and
+  intergate reads client addresses from `X-Forwarded-For`.
+- **intergate** (`traefik.tls.passthrough: true`): Traefik routes the HTTPS
+  connections of the domain and its subdomains by name without decrypting
+  them, with the PROXY protocol so intergate sees client addresses (and
+  trusts no `X-Forwarded-For`). intergate then gets its certificates from
+  Let's Encrypt as the binary does: the dashboard works once installed,
+  each subdomain gets one as it is registered, and an owner can set up a
+  DNS provider in the dashboard (Admin → DNS) for [one wildcard
+  certificate](#wildcard-certificate-and-dns-providers). Traefik's HTTP
+  middlewares don't apply to these hosts, and the certificates live on the
+  volume, so keep `persistence` enabled. Plain HTTP goes through the
+  `traefik.tls.httpEntryPoints` (`web`) to intergate, which redirects it
+  and answers HTTP-01 challenges.
+
 ```bash
 helm install intergate oci://ghcr.io/jgermade/charts/intergate \
   --set domain=gate.example.com \
   --set traefik.tls.certResolver=letsencrypt-dns
+# or, with intergate getting its own certificates:
+helm install intergate oci://ghcr.io/jgermade/charts/intergate \
+  --set domain=gate.example.com \
+  --set traefik.tls.passthrough=true --set traefik.tls.acmeEmail=you@example.com
 kubectl exec deploy/intergate -- intergate setup-url    # the link to the dashboard's setup
 kubectl exec -it deploy/intergate -- intergate config
 ```
@@ -507,7 +534,10 @@ Highlights:
   subdomain and account but owners', owners manage everything, and
   `auth.admins` are always owners. With none of them, the dashboard's setup
   asks for the owner.
-- `ssh.proxy_protocol`: expect a PROXY protocol header from a load balancer.
+- `ssh.proxy_protocol`, `http.tls.proxy_protocol`: expect a PROXY protocol
+  header from a load balancer, or from a proxy that passes TLS through.
+  Only when that proxy is the only way to the port: a header tells
+  intergate the client's address.
 - `dns`: a DNS provider for [one wildcard
   certificate](#wildcard-certificate-and-dns-providers), with
   `http.tls.acme`. Without it, owners can set one up from the dashboard.

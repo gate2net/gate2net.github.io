@@ -21,12 +21,15 @@ http:
     # Either a wildcard certificate for gate.example.com and *.gate.example.com:
     # cert_file: /etc/intergate/fullchain.pem
     # key_file: /etc/intergate/privkey.pem
-    # ...or certificates from Let's Encrypt, issued on demand for the
-    # dashboard and every registered subdomain (or one wildcard certificate
-    # for all of them, with a DNS provider: see dns below):
+    # ...or certificates from Let's Encrypt, for the dashboard on its first
+    # visit and for each subdomain as it is registered (or one wildcard
+    # certificate for all of them, with a DNS provider: see dns below):
     acme:
       enabled: true
       email: admin@example.com
+    # Expect a PROXY protocol header on every HTTPS connection, from a load
+    # balancer or a proxy that passes TLS through (Traefik's passthrough).
+    # proxy_protocol: false
   # Trust X-Forwarded-For from a reverse proxy you control.
   trust_proxy_headers: false
 

@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -69,10 +70,13 @@ type Server struct {
 	ssh      *sshd.Server
 	web      *web.Server
 	admin    *admin.Handler
-	// wildcard keeps the wildcard certificate, when intergate gets its
-	// certificates from Let's Encrypt.
+	// autocert gets each host's certificate, and wildcard the wildcard
+	// one, when intergate gets its certificates from Let's Encrypt.
+	autocert *autocert.Manager
 	wildcard *wildcard.Manager
 	dnsEnv   dns.Env
+	// warming counts the certificates being got for new subdomains.
+	warming sync.WaitGroup
 }
 
 // New opens the data directory and builds every component.
@@ -105,13 +109,23 @@ func New(cfg *config.Config, log *slog.Logger, opts Options) (*Server, error) {
 		s.store.Close()
 		return nil, fmt.Errorf("load SSH host key: %w", err)
 	}
-	if cfg.HTTP.TLS.ACME.Enabled {
+	if acmeCfg := cfg.HTTP.TLS.ACME; acmeCfg.Enabled {
+		s.autocert = &autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			Cache:      autocert.DirCache(filepath.Join(cfg.DataDir, "acme")),
+			Email:      acmeCfg.Email,
+			HostPolicy: hostPolicy(cfg, s.store),
+			Client:     &acme.Client{DirectoryURL: acmeCfg.DirectoryURL},
+		}
 		if err := s.openWildcard(opts); err != nil {
 			s.store.Close()
 			return nil, err
 		}
 	}
 	s.manage = manage.New(cfg, s.store, s.registry, s.ports, names.NewChecker(cfg.ReservedSubdomains), log.With("component", "manage"))
+	if s.autocert != nil {
+		s.manage.SubdomainCreated = s.warmCertificate
+	}
 	s.ssh = sshd.New(cfg, s.store, s.registry, s.ports, s.hostKey, log.With("component", "ssh"))
 	s.web, err = web.New(web.Options{
 		Config:     cfg,
@@ -185,6 +199,32 @@ func (s *Server) openWildcard(opts Options) error {
 		s.wildcard.Broken(name, err)
 	}
 	return nil
+}
+
+// warmCertificate gets the certificate of a new subdomain now, so its first
+// visitor does not wait for it; a failure is only logged, and tried again
+// on the first visit. Nothing is done when the wildcard certificate covers
+// it, or a DNS provider is about to.
+func (s *Server) warmCertificate(name string) {
+	host := name + "." + s.cfg.Domain()
+	ecdsaHello := &tls.ClientHelloInfo{
+		ServerName:       host,
+		SignatureSchemes: []tls.SignatureScheme{tls.ECDSAWithP256AndSHA256},
+		SupportedCurves:  []tls.CurveID{tls.CurveP256},
+		CipherSuites:     []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
+	}
+	if s.wildcard.Certificate(ecdsaHello) != nil || s.wildcard.Status().Provider != "" {
+		return
+	}
+	s.warming.Add(1)
+	go func() {
+		defer s.warming.Done()
+		if _, err := s.autocert.GetCertificate(ecdsaHello); err != nil {
+			s.log.Warn("certificate not issued: it is tried again on the first visit", "host", host, "err", err)
+			return
+		}
+		s.log.Info("certificate ready", "host", host)
+	}()
 }
 
 // Close releases the database.
@@ -264,13 +304,7 @@ func (s *Server) Run(ctx context.Context) error {
 		redirect := redirectToHTTPS(cfg)
 		httpsSrv = newServer(s.web)
 		if tlsCfg.ACME.Enabled {
-			m := &autocert.Manager{
-				Prompt:     autocert.AcceptTOS,
-				Cache:      autocert.DirCache(filepath.Join(cfg.DataDir, "acme")),
-				Email:      tlsCfg.ACME.Email,
-				HostPolicy: hostPolicy(cfg, s.store),
-				Client:     &acme.Client{DirectoryURL: tlsCfg.ACME.DirectoryURL},
-			}
+			m := s.autocert
 			httpsSrv.TLSConfig = m.TLSConfig()
 			// The wildcard certificate, once there is one; each host's
 			// own from autocert until then, and for its challenges.
@@ -296,6 +330,9 @@ func (s *Server) Run(ctx context.Context) error {
 		if httpsLn, err = listen(tlsCfg.Listen); err != nil {
 			closeAll()
 			return err
+		}
+		if tlsCfg.ProxyProtocol {
+			httpsLn = &proxyproto.Listener{Listener: httpsLn, ReadHeaderTimeout: 10 * time.Second}
 		}
 	}
 	if cfg.SSH.ProxyProtocol {
@@ -383,6 +420,16 @@ func (s *Server) Run(ctx context.Context) error {
 	defer done()
 	for _, srv := range servers {
 		srv.Shutdown(shutdownCtx)
+	}
+	// Certificates of new subdomains being got: a little while.
+	warmed := make(chan struct{})
+	go func() {
+		s.warming.Wait()
+		close(warmed)
+	}()
+	select {
+	case <-warmed:
+	case <-shutdownCtx.Done():
 	}
 	return runErr
 }

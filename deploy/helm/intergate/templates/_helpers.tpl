@@ -28,6 +28,23 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- and .Values.traefik.enabled .Values.traefik.ssh.enabled .Values.traefik.ssh.proxyProtocol (not .Values.sshService.enabled) -}}
 {{- end -}}
 
+{{/* intergate terminates TLS, Traefik passes it through. */}}
+{{- define "intergate.passthrough" -}}
+{{- if and .Values.traefik.enabled .Values.traefik.tls.passthrough -}}
+{{- if or .Values.traefik.tls.certResolver .Values.traefik.tls.secretName .Values.certManager.enabled -}}
+{{- fail "traefik.tls.passthrough lets intergate get its certificates: leave traefik.tls.certResolver, traefik.tls.secretName and certManager unset" -}}
+{{- end -}}
+true
+{{- else -}}
+false
+{{- end -}}
+{{- end -}}
+
+{{/* The domain and its direct subdomains, as a Go regular expression. */}}
+{{- define "intergate.hostRegexp" -}}
+^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.{{ .Values.domain | replace "." "\\." }}$
+{{- end -}}
+
 {{- define "intergate.tlsSecret" -}}
 {{- if .Values.traefik.tls.secretName -}}
 {{- .Values.traefik.tls.secretName -}}

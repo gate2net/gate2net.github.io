@@ -56,8 +56,23 @@ traefik:
   enabled: true
   entryPoints: [websecure]
   tls:
-    # Name of a Traefik certificate resolver. Tunnels need a certificate for
-    # *.<domain>, so the resolver must use the DNS-01 challenge.
+    # Let intergate terminate TLS itself, with Let's Encrypt, as it does
+    # with the binary or Docker: Traefik routes the HTTPS connections of
+    # <domain> and its subdomains by name without decrypting them, with the
+    # PROXY protocol so intergate sees client addresses. The dashboard works
+    # once installed, each subdomain gets a certificate as it is registered,
+    # and an owner can set up a DNS provider in the dashboard (Admin → DNS)
+    # for one wildcard certificate. certResolver, secretName and certManager
+    # are not used then. The certificates live on the volume: keep
+    # persistence enabled.
+    passthrough: false
+    # With passthrough: Let's Encrypt's contact for the certificates, and
+    # Traefik's entry points for plain HTTP (redirects to HTTPS, HTTP-01).
+    acmeEmail: ""
+    httpEntryPoints: [web]
+    # Without passthrough, Traefik terminates TLS. Name of a Traefik
+    # certificate resolver: tunnels need a certificate for *.<domain>, so
+    # the resolver must use the DNS-01 challenge.
     certResolver: ""
     # Or an existing TLS secret holding a certificate for <domain> and
     # *.<domain> (see certManager below).

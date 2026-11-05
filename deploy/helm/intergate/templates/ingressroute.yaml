@@ -1,6 +1,46 @@
 {{- if .Values.traefik.enabled }}
 {{- $domain := .Values.domain -}}
 {{- $tlsSecret := include "intergate.tlsSecret" . -}}
+{{- if eq (include "intergate.passthrough" .) "true" }}
+# intergate terminates TLS: Traefik routes each connection by its server
+# name, without decrypting it, and tells intergate the client's address.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ include "intergate.fullname" . }}-https
+  labels:
+    {{- include "intergate.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    {{- toYaml .Values.traefik.entryPoints | nindent 4 }}
+  routes:
+    - match: HostSNI(`{{ $domain }}`) || HostSNIRegexp(`{{ include "intergate.hostRegexp" . }}`)
+      services:
+        - name: {{ include "intergate.fullname" . }}
+          port: https
+          proxyProtocol:
+            version: 2
+  tls:
+    passthrough: true
+---
+# Plain HTTP: intergate redirects it to HTTPS and answers Let's Encrypt's
+# HTTP-01 challenges.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "intergate.fullname" . }}
+  labels:
+    {{- include "intergate.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    {{- toYaml .Values.traefik.tls.httpEntryPoints | nindent 4 }}
+  routes:
+    - match: Host(`{{ $domain }}`) || HostRegexp(`{{ include "intergate.hostRegexp" . }}`)
+      kind: Rule
+      services:
+        - name: {{ include "intergate.fullname" . }}
+          port: http
+{{- else }}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -12,7 +52,7 @@ spec:
     {{- toYaml .Values.traefik.entryPoints | nindent 4 }}
   routes:
     # The dashboard and every tunnel: intergate routes by Host itself.
-    - match: Host(`{{ $domain }}`) || HostRegexp(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.{{ $domain | replace "." "\\." }}$`)
+    - match: Host(`{{ $domain }}`) || HostRegexp(`{{ include "intergate.hostRegexp" . }}`)
       kind: Rule
       services:
         - name: {{ include "intergate.fullname" . }}
@@ -29,4 +69,5 @@ spec:
           - {{ printf "*.%s" $domain | quote }}
     {{- end }}
   {{- end }}
+{{- end }}
 {{- end }}

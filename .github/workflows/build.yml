@@ -160,21 +160,43 @@ jobs:
             --set secretEnv.SMTP_PASSWORD=x > alt.yaml
       - name: Render a release installed with the gate2net chart
         run: helm template gate2net deploy/helm/intergate --set nameOverride=gate2net > legacy.yaml
+      - name: Render with TLS passed through to intergate
+        run: |
+          helm template g2s deploy/helm/intergate \
+            --set traefik.tls.passthrough=true --set traefik.tls.acmeEmail=admin@example.com > passthrough.yaml
+          # It gets its own certificates: Traefik's must not be set as well.
+          if helm template g2s deploy/helm/intergate \
+            --set traefik.tls.passthrough=true --set certManager.enabled=true > /dev/null 2>&1; then
+            echo "::error::passthrough rendered with certManager"
+            exit 1
+          fi
       - name: Check the rendered configuration
         run: |
+          # `! grep` would not stop the step: bash -e ignores negated commands.
+          absent() { if grep -q -- "$1" "$2"; then echo "::error::$2 has $1"; return 1; fi; }
           grep -q 'proxy_protocol: true' default.yaml
           grep -q 'proxy_protocol: false' alt.yaml
           grep -q 'public_url: https://tunnels.example.org' alt.yaml
           grep -q 'kind: IngressRouteTCP' default.yaml
-          ! grep -q 'kind: IngressRouteTCP' alt.yaml
+          absent 'kind: IngressRouteTCP' alt.yaml
           grep -q 'kind: Certificate' alt.yaml
           grep -q 'ports: 31000-31002' alt.yaml
           grep -q 'port: 31002' alt.yaml
           grep -q 'name: udp-31002' alt.yaml
-          ! grep -q 'g2s-intergate-tcp' default.yaml
+          absent 'g2s-intergate-tcp' default.yaml
           grep -q "image: \"ghcr.io/jgermade/intergate:$(cat VERSION)\"" default.yaml
           grep -q 'claimName: gate2net$' legacy.yaml
           grep -q 'app.kubernetes.io/name: gate2net$' legacy.yaml
+          grep -q 'trust_proxy_headers: true' default.yaml
+          absent 'containerPort: 8443' default.yaml
+          absent 'trust_proxy_headers' passthrough.yaml
+          grep -q 'listen: :8443' passthrough.yaml
+          grep -q 'email: admin@example.com' passthrough.yaml
+          grep -q 'containerPort: 8443' passthrough.yaml
+          grep -q 'name: g2s-intergate-https' passthrough.yaml
+          grep -q 'passthrough: true' passthrough.yaml
+          grep -q 'HostSNIRegexp(`^\[a-z0-9\]' passthrough.yaml
+          grep -q -- '- web' passthrough.yaml
 
   # What Pages serves: pages/ as it is, the landing and setup.sh, and the
   # design system's demo under theme/. Every push checks it; only a release

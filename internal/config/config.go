@@ -62,6 +62,10 @@ type TLSConfig struct {
 	CertFile string     `yaml:"cert_file"`
 	KeyFile  string     `yaml:"key_file"`
 	ACME     ACMEConfig `yaml:"acme"`
+	// ProxyProtocol expects a PROXY protocol header (v1 or v2) on every
+	// HTTPS connection, from a load balancer or a proxy that passes TLS
+	// through (Traefik's passthrough), to learn client addresses.
+	ProxyProtocol bool `yaml:"proxy_protocol"`
 }
 
 // Enabled reports whether intergate terminates TLS itself.
@@ -432,6 +436,9 @@ func (c *Config) validate() error {
 	}
 	if tls.Enabled() && u.Scheme != "https" {
 		return errors.New("public_url must use https:// when http.tls is enabled")
+	}
+	if tls.ProxyProtocol && !tls.Enabled() {
+		return errors.New("http.tls.proxy_protocol needs http.tls: acme or cert_file and key_file")
 	}
 
 	// Without a sign-in method or anyone who may sign in, intergate starts
