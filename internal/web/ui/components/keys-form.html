@@ -22,12 +22,16 @@
 
   // A subdomain's form offers the account's keys it does not have yet.
   let accountKeys = []
+  let ownKeys = 0
   if (!toAccount) {
     try {
       const have = new Set(sub.key_list.map(k => k.fingerprint))
-      accountKeys = (await api("GET", "/account/keys")).filter(k => !have.has(k.fingerprint))
+      const all = await api("GET", "/account/keys")
+      ownKeys = all.length
+      accountKeys = all.filter(k => !have.has(k.fingerprint))
     } catch {}
   }
+  const allHere = ownKeys === 1 ? "Your account’s key is" : `All ${ownKeys} keys of your account are`
   const short = fp => fp.replace(/^SHA256:/, "").slice(0, 12) + "…"
   $: keyItems = accountKeys.map(k => ({ value: k.id, label: k.name, hint: `${k.type} · ${short(k.fingerprint)}`, icon: "key" }))
   let picked = accountKeys.length ? accountKeys[0].id : 0
@@ -92,7 +96,8 @@
     <label>Name <span class="hint">Optional. Defaults to the key comment.</span>
       <input name="name" maxlength="64" autocomplete="off" :value="name" @input="name = $event.target.value">
     </label>
-    <p :if="!toAccount && !keyItems.length" class="hint">Keys you add to <a href="/account?tab=keys">your account</a> can be picked here, on any of your subdomains.</p>
+    <p :if="!toAccount && !ownKeys" class="hint">Keys you add to <a href="/account?tab=keys">your account</a> can be picked here, on any of your subdomains.</p>
+    <p :elseif="!toAccount && !keyItems.length" class="hint">{{ allHere }} on {{ sub.name }} already. Add another in <a href="/account?tab=keys">your account</a> to pick it here.</p>
     <div :if="cancel" class="form-actions">
       <Button variant="secondary" @click="$emit('cancel')">Cancel</Button>
       <Button type="submit" :disabled="busy">Add keys</Button>

@@ -244,6 +244,8 @@
   $: nextTry = cert.next_try && !String(cert.next_try).startsWith("0001-") ? new Date(cert.next_try) : null
 
   let editingDNS = false
+  // The form stays while the dialog plays its way out, and is new each time.
+  let dnsForm = false
   let dnsBusy = false
   let dnsError = ""
   let dnsProvider = ""
@@ -257,6 +259,7 @@
     for (const [k, v] of Object.entries(dns.settings || {})) if (v !== "stored") dnsValues[k] = v
     dnsRecord = dns.source ? dns.wildcard_record : !dns.wildcard_resolves
     dnsError = ""
+    dnsForm = true
     editingDNS = true
   }
   const chooseProvider = name => {
@@ -499,41 +502,43 @@
     <p :if="dns.source === 'config'" class="hint">It is set in the configuration file (<code>dns</code>): change it there and restart intergate.</p>
     <p :elseif="!dns.editable" class="hint">Only owners can change it.</p>
 
-    <form :elseif="editingDNS" class="form" @submit.prevent="saveDNS">
-      <Alert :if="dnsError" tone="bad" flush>{{ dnsError }}</Alert>
-      <label>DNS provider <span class="hint">The service that serves the zone of {{ app.domain }}.</span>
-        <Select name="provider" :model="dnsProvider" :items="providerItems" @change="chooseProvider($event.detail)" />
-      </label>
-      <p class="hint help">{{ spec.help }}</p>
-      <label :each="f in spec.fields" :key="spec.name + '.' + f.name">{{ f.title }}
-        <span :if="fieldHint(f)" class="hint">{{ fieldHint(f) }}</span>
-        <FilePicker :if="f.upload" :name="f.name" accept=".json,application/json" button="Choose the file"
-                    :placeholder="stored(f) ? 'The stored one' : 'No file chosen'" @pick="setValue(f, $event.detail.text)" />
-        <input :elseif="f.secret" type="password" :name="f.name" autocomplete="new-password" spellcheck="false" :required="f.required && !stored(f)"
-               :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
-        <input :else :name="f.name" autocomplete="off" autocapitalize="off" spellcheck="false" :required="f.required"
-               :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
-      </label>
-      <div class="switch-row">
-        <Switch :model="dnsRecord" label="Point the subdomains at this server" />
-        <div>
-          <strong>Point *.{{ app.domain }} at {{ app.domain }}</strong>
-          <div class="hint">A CNAME record, in place of the A, AAAA or CNAME records *.{{ app.domain }} has{{ dns.wildcard_resolves ? " (it resolves already)" : " (it does not resolve yet)" }}.</div>
-        </div>
-      </div>
-      <div class="actions">
-        <Button type="submit" :disabled="dnsBusy">{{ dnsBusy ? "Checking the provider…" : "Check and save" }}</Button>
-        <button type="button" class="link" @click="editingDNS = false">Cancel</button>
-      </div>
-      <p class="hint">intergate adds a TXT record to the zone of {{ app.domain }} and removes it, to check the settings, then saves them and gets the certificate. Secrets are stored encrypted.</p>
-    </form>
-
     <div :else class="actions">
       <Button @click="editDNS">{{ dns.source ? "Change the DNS provider" : "Set up a DNS provider" }}</Button>
       <Button :if="dns.source" variant="secondary" @click="removingDNS = true">Remove</Button>
     </div>
   </div>
 </Card></div>
+
+<Modal :open="editingDNS" size="lg" :title="dns.source ? 'Change the DNS provider' : 'Set up a DNS provider'" @close="editingDNS = false" @closed="dnsForm = false">
+  <form :if="dnsForm" id="dns-form" class="form" @submit.prevent="saveDNS">
+    <Alert :if="dnsError" tone="bad" flush>{{ dnsError }}</Alert>
+    <label>DNS provider <span class="hint">The service that serves the zone of {{ app.domain }}.</span>
+      <Select name="provider" :model="dnsProvider" :items="providerItems" @change="chooseProvider($event.detail)" />
+    </label>
+    <p class="hint help">{{ spec.help }}</p>
+    <label :each="f in spec.fields" :key="spec.name + '.' + f.name">{{ f.title }}
+      <span :if="fieldHint(f)" class="hint">{{ fieldHint(f) }}</span>
+      <FilePicker :if="f.upload" :name="f.name" accept=".json,application/json" button="Choose the file"
+                  :placeholder="stored(f) ? 'The stored one' : 'No file chosen'" @pick="setValue(f, $event.detail.text)" />
+      <input :elseif="f.secret" type="password" :name="f.name" autocomplete="new-password" spellcheck="false" :required="f.required && !stored(f)"
+             :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
+      <input :else :name="f.name" autocomplete="off" autocapitalize="off" spellcheck="false" :required="f.required"
+             :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
+    </label>
+    <div class="switch-row">
+      <Switch :model="dnsRecord" label="Point the subdomains at this server" />
+      <div>
+        <strong>Point *.{{ app.domain }} at {{ app.domain }}</strong>
+        <div class="hint">A CNAME record, in place of the A, AAAA or CNAME records *.{{ app.domain }} has{{ dns.wildcard_resolves ? " (it resolves already)" : " (it does not resolve yet)" }}.</div>
+      </div>
+    </div>
+    <p class="hint">intergate adds a TXT record to the zone of {{ app.domain }} and removes it, to check the settings, then saves them and gets the certificate. Secrets are stored encrypted.</p>
+  </form>
+  <template :slot.foot>
+    <Button variant="secondary" @click="editingDNS = false">Cancel</Button>
+    <Button type="submit" form="dns-form" :disabled="dnsBusy">{{ dnsBusy ? "Checking the provider…" : "Check and save" }}</Button>
+  </template>
+</Modal>
 
 <Modal :open="removingDNS" title="Remove the DNS provider?" @close="removingDNS = false">
   <p class="muted">intergate stops renewing the wildcard certificate.{{ certValid ? " It is used until " + date(cert.not_after) + "; then" : "" }} Each subdomain gets a certificate of its own again, on its first visit. The DNS records stay as they are.</p>
