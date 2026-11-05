@@ -300,6 +300,20 @@ auth:
 		t.Errorf("client address not taken from the PROXY header:\n%s", logs.String())
 	}
 
+	// Without the header, no connection: a proxy that stopped sending it
+	// would otherwise make every visitor look like the proxy, sharing one
+	// address's limits.
+	plain := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool},
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, httpsAddr)
+		},
+	}}
+	if resp, err := plain.Get("https://gate.test/login"); err == nil {
+		resp.Body.Close()
+		t.Errorf("served without a PROXY header: %d", resp.StatusCode)
+	}
+
 	if _, err := config.Parse([]byte("public_url: https://gate.test\nhttp:\n  tls: {proxy_protocol: true}\n")); err == nil {
 		t.Error("proxy_protocol accepted without TLS")
 	}
