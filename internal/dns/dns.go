@@ -89,6 +89,8 @@ type Spec struct {
 	Name string
 	// Title names the DNS service: Cloudflare.
 	Title string
+	// Summary says in a few words what it asks for: "An API token".
+	Summary string
 	// Help says what credentials it needs and where they come from.
 	Help   string
 	Fields []Field

@@ -11,9 +11,10 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:  "digitalocean",
-		Title: "DigitalOcean",
-		Help:  "A personal access token (API → Tokens) with read and write access to domains.",
+		Name:    "digitalocean",
+		Title:   "DigitalOcean",
+		Summary: "A personal access token",
+		Help:    "A personal access token (API → Tokens) with read and write access to domains.",
 		Fields: []Field{
 			{Name: "api_token", Title: "API token", Required: true, Secret: true, Env: "DIGITALOCEAN_TOKEN",
 				Description: "With the scopes domain:read, domain:create, domain:update and domain:delete."},

@@ -1,5 +1,7 @@
 <script :setup>
-  // The signed-in user's profile and passkeys. Right after a first sign-in
+  // The signed-in user's account, in tabs: the profile, the SSH keys they
+  // add once and then to any of their subdomains, and their passkeys
+  // (`?tab=keys` or `passkeys` opens one). Right after a first sign-in
   // (`?welcome=1`) it suggests adding a passkey before going on.
   const { app, go, query, toast } = await import("@ui/lib/store.js")
   const { api } = await import("@ui/lib/api.js")
@@ -12,19 +14,82 @@
   const Facts = await import("@theme/components/facts.html")
   const Icon = await import("@theme/components/icon.html")
   const Modal = await import("@theme/components/modal.html")
+  const Tabs = await import("@theme/components/tabs.html")
+  const KeysForm = await import("@ui/components/keys-form.html")
 
   document.title = "Account · intergate"
 
   const next = query("rd") || "/"
   let passkeys = []
+  let keys = []
+  let keysLimit = 0
   const load = async () => {
     try {
-      passkeys = (await api("GET", "/account")).passkeys
+      const account = await api("GET", "/account")
+      passkeys = account.passkeys
+      keys = account.keys
+      keysLimit = account.keys_limit
     } catch (e) {
       toast(e.message, "error")
     }
   }
   await load()
+
+  let tab = ["keys", "passkeys"].includes(query("tab")) ? query("tab") : "profile"
+  if (tab === "passkeys" && !app.passkeys) tab = "profile"
+  $: tabs = [
+    { value: "profile", label: "Account" },
+    { value: "keys", label: "SSH keys", count: keys.length },
+    ...(app.passkeys ? [{ value: "passkeys", label: "Passkeys", count: passkeys.length }] : []),
+  ]
+
+  // SSH keys: added in a dialog, renamed in place, removed after a
+  // dialog that says which subdomains lose them.
+  let addingKeys = false
+  let keysForm = false
+  const startAddKeys = () => {
+    keysForm = true
+    addingKeys = true
+  }
+  const keysAdded = () => {
+    addingKeys = false
+    load()
+  }
+  $: keysFull = keys.length >= keysLimit
+  let renamingKey = 0
+  let newKeyName = ""
+  const startRenameKey = key => {
+    renamingKey = key.id
+    newKeyName = key.name
+    setTimeout(() => document.querySelector('[name="rename-key"]')?.select())
+  }
+  const renameKey = async key => {
+    try {
+      const { name } = await api("PATCH", "/account/keys/" + key.id, { name: newKeyName })
+      renamingKey = 0
+      toast(`Key renamed to "${name}"${key.subdomains.length ? ", on its subdomains too" : ""}.`)
+    } catch (e) {
+      toast(e.message, "error")
+    }
+    load()
+  }
+  let removingKey = null
+  let askingKey = false
+  const askRemoveKey = key => {
+    removingKey = key
+    askingKey = true
+  }
+  const removeKey = async () => {
+    const key = removingKey
+    askingKey = false
+    try {
+      const { removed_from } = await api("DELETE", "/account/keys/" + key.id)
+      toast(removed_from.length ? `Removed "${key.name}", from ${removed_from.join(", ")} too.` : `Removed "${key.name}".`)
+    } catch (e) {
+      toast(e.message, "error")
+    }
+    load()
+  }
 
   const welcome = app.passkeys && query("welcome") && !passkeys.length
 
@@ -110,7 +175,7 @@
 
 <div class="page-head">
   <h1>Account</h1>
-  <Button variant="secondary" @click="signingOut = true">Sign out</Button>
+  <Tabs label="Account" :model="tab" :items="tabs" />
 </div>
 
 <Modal :open="signingOut" title="Sign out?" @close="signingOut = false">
@@ -130,11 +195,72 @@
   </div>
 </Card>
 
+<div :if="tab === 'profile'" role="tabpanel" aria-label="Account">
 <Card title="Profile">
   <Facts columns="3" :items="profile" />
 </Card>
+<div class="card-actions"><Button variant="secondary" @click="signingOut = true">Sign out</Button></div>
+</div>
 
-<Card :if="app.passkeys" title="Passkeys">
+<div :elseif="tab === 'keys'" role="tabpanel" aria-label="SSH keys">
+<Card title="SSH keys">
+  <template :slot.aside>
+    <Badge>{{ keys.length }} of {{ keysLimit }}</Badge>
+    <Button :if="keys.length && !keysFull" variant="secondary" size="sm" icon="plus" @click="startAddKeys">Add keys</Button>
+  </template>
+  <p class="muted intro">Add your keys once, then pick them on any of your subdomains, in its SSH keys tab. A key removed here is removed from every subdomain, and closes the tunnels it opened.</p>
+  <div :if="keys.length" class="table-wrap">
+    <table class="table tiles">
+      <thead><tr><th>Name</th><th>Fingerprint</th><th>Subdomains</th><th class="hide-narrow">Added</th><th></th></tr></thead>
+      <tbody>
+        <tr :each="key in keys" :key="key.id">
+          <td>
+            <form :if="renamingKey === key.id" class="form-row rename" @submit.prevent="renameKey(key)">
+              <input name="rename-key" maxlength="64" required autocomplete="off" aria-label="New name"
+                     :value="newKeyName" @input="newKeyName = $event.target.value" @keydown="$event.key === 'Escape' && (renamingKey = 0)">
+              <Button type="submit" size="sm">Save</Button>
+              <button type="button" class="link" @click="renamingKey = 0">Cancel</button>
+            </form>
+            <span :else>{{ key.name }}</span>
+            <div class="muted small">{{ key.type }}</div>
+          </td>
+          <td><code class="small">{{ key.fingerprint }}</code></td>
+          <td>
+            <span :if="!key.subdomains.length" class="muted small">None yet</span>
+            <span :else class="key-subdomains">
+              <a :each="sub in key.subdomains" :key="sub" :href="'/subdomains/' + encodeURIComponent(sub)">{{ sub }}</a>
+            </span>
+          </td>
+          <td class="hide-narrow">{{ ago(key.created_at) }}</td>
+          <td class="right row-actions">
+            <Button variant="ghost" square icon="pencil" title="Rename" :label="'Rename ' + key.name" @click="startRenameKey(key)" />
+            <Button variant="ghost-danger" square icon="trash" title="Remove" :label="'Remove ' + key.name" @click="askRemoveKey(key)" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p :else class="empty-inline">No keys yet.</p>
+  <KeysForm :if="!keys.length" :account="true" @added="load()" />
+  <p :if="keysFull" class="hint">An account can have at most {{ keysLimit }} keys: remove one to add another.</p>
+</Card>
+
+<Modal :open="addingKeys" size="lg" title="Add SSH keys to your account" @close="addingKeys = false" @closed="keysForm = false">
+  <KeysForm :if="keysForm" :account="true" :cancel="true" @added="keysAdded" @cancel="addingKeys = false" />
+</Modal>
+
+<Modal :open="askingKey" :title="'Remove ' + (removingKey ? removingKey.name : '') + '?'" @close="askingKey = false">
+  <p :if="removingKey && removingKey.subdomains.length" class="muted">It is also removed from {{ removingKey.subdomains.join(", ") }}, and the tunnels and ports it opened there close.</p>
+  <p :else class="muted">No subdomain has it.</p>
+  <template :slot.foot>
+    <Button variant="secondary" @click="askingKey = false">Cancel</Button>
+    <Button variant="danger" @click="removeKey">Remove</Button>
+  </template>
+</Modal>
+</div>
+
+<div :elseif="tab === 'passkeys'" role="tabpanel" aria-label="Passkeys">
+<Card title="Passkeys">
   <template :slot.aside><Badge>{{ passkeys.length }}</Badge></template>
   <p class="muted intro">Sign in without email codes. Each device or password manager has its own passkey.</p>
   <div :if="passkeys.length" class="table-wrap">
@@ -164,7 +290,8 @@
   <p :else class="empty-inline">No passkeys yet.</p>
   <p :if="!supported" class="muted small">This browser does not support passkeys.</p>
 </Card>
-<div :if="app.passkeys" class="card-actions"><Button variant="secondary" icon="plus" :disabled="!supported" @click="startAddPasskey">Add a passkey</Button></div>
+<div class="card-actions"><Button variant="secondary" icon="plus" :disabled="!supported" @click="startAddPasskey">Add a passkey</Button></div>
+</div>
 
 <Modal :open="addingPasskey" size="md" title="Add a passkey" @close="stopAddPasskey">
   <form id="add-passkey" class="form" @submit.prevent="addPasskey">

@@ -243,7 +243,7 @@ func TestPasskeys(t *testing.T) {
 	if resp, _ := call(t, b, "DELETE", fmt.Sprintf("/api/account/passkeys/%d", id), nil); resp.StatusCode != http.StatusNoContent {
 		t.Errorf("remove passkey: %d", resp.StatusCode)
 	}
-	if _, body := call(t, b, "GET", "/api/account", nil); body != `{"passkeys":[]}`+"\n" {
+	if _, body := call(t, b, "GET", "/api/account", nil); !strings.Contains(body, `"passkeys":[]`) {
 		t.Errorf("account after removing: %s", body)
 	}
 }

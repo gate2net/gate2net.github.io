@@ -16,8 +16,9 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:  "gcp",
-		Title: "Google Cloud DNS",
+		Name:    "gcp",
+		Title:   "Google Cloud DNS",
+		Summary: "A service account key, or the server’s own",
 		Help: "A service account with the role DNS Administrator (roles/dns.admin) on the project of the zone.\n" +
 			"Without a credentials file, Application Default Credentials are used: GOOGLE_APPLICATION_CREDENTIALS,\n" +
 			"`gcloud auth application-default login`, or the service account of a GCE VM, GKE (Workload Identity) or Cloud Run.",

@@ -75,11 +75,14 @@ type Key struct {
 	Fingerprint string    `json:"fingerprint"`
 	CreatedAt   time.Time `json:"created_at"`
 	LastUsedAt  time.Time `json:"last_used_at"`
+	// FromAccount is set for a key added from an account's keys: it goes
+	// when the account's does.
+	FromAccount bool `json:"from_account,omitempty"`
 }
 
 // NewKey describes k, without the key itself.
 func NewKey(k *store.Key) Key {
-	return Key{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt}
+	return Key{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, FromAccount: k.UserKeyID != 0}
 }
 
 // NewKeys describes keys; never nil, so it encodes as [].

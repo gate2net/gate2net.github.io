@@ -18,6 +18,7 @@ func init() {
 	Register(Spec{
 		Name:       "exec",
 		Title:      "A program of yours (any other DNS service)",
+		Summary:    "A program run for each change",
 		ConfigOnly: true,
 		Help: "intergate runs the program with the change to make, for any DNS service:\n" +
 			"  PROGRAM set NAME TYPE TTL VALUE...   replace the records of NAME and TYPE with these values\n" +

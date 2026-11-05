@@ -277,6 +277,10 @@ func (s *Server) routes() http.Handler {
 	user := s.requireUser
 	mux.Handle("POST /api/logout", user(s.handleLogout))
 	mux.Handle("GET /api/account", user(s.handleAccount))
+	mux.Handle("GET /api/account/keys", user(s.handleAccountKeys))
+	mux.Handle("POST /api/account/keys", user(s.handleAddAccountKeys))
+	mux.Handle("PATCH /api/account/keys/{id}", user(s.handleRenameAccountKey))
+	mux.Handle("DELETE /api/account/keys/{id}", user(s.handleDeleteAccountKey))
 	if s.webauthn != nil {
 		mux.Handle("POST /api/account/passkeys/options", user(s.handlePasskeyRegisterOptions))
 		mux.Handle("POST /api/account/passkeys", user(s.handlePasskeyRegister))

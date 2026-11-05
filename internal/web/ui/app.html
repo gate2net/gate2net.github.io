@@ -8,6 +8,7 @@
   const Subdomain = await import("@ui/views/subdomain.html")
   const Account = await import("@ui/views/account.html")
   const Admin = await import("@ui/views/admin.html")
+  const Alert = await import("@theme/components/alert.html")
   const Card = await import("@theme/components/card.html")
   const Button = await import("@theme/components/button.html")
   const Icon = await import("@theme/components/icon.html")
@@ -30,6 +31,22 @@
   $: section = current.page === "subdomain" ? "subdomains" : current.page
 
   const retry = () => go(location.href, { replace: true })
+
+  // Owners are asked for a DNS provider, between the bar and the page,
+  // until there is one or they say "Not now" (in this browser).
+  const DISMISSED = "intergate:dns-banner"
+  let dismissed = false
+  try {
+    dismissed = localStorage.getItem(DISMISSED) === "1"
+  } catch {}
+  const dismiss = () => {
+    dismissed = true
+    try {
+      localStorage.setItem(DISMISSED, "1")
+    } catch {}
+  }
+  $: dnsBanner = !dismissed && !app.setup && app.user && app.user.role === "owner" &&
+    app.wildcard && !app.wildcard.provider && !app.wildcard.ready
 </script>
 
 <header class="topbar">
@@ -53,6 +70,19 @@
     </nav>
   </div>
 </header>
+
+<div :if="dnsBanner" class="wrap banner">
+  <Alert :tone="app.wildcard.resolves ? 'info' : 'warn'" flush>
+    <div class="banner-body">
+      <p :if="app.wildcard.resolves"><strong>Set up your DNS provider</strong> for one certificate that covers every subdomain of {{ app.domain }}. Until then, each subdomain gets a certificate of its own as it is registered.</p>
+      <p :else><strong>Subdomains won’t work yet:</strong> *.{{ app.domain }} does not point at this server. Set up your DNS provider, and intergate points it here and gets one certificate for every subdomain.</p>
+      <div class="banner-actions">
+        <a class="icon-link" href="/admin?tab=dns">Set up DNS<Icon name="arrow-right" size="sm" /></a>
+        <button type="button" class="link" @click="dismiss">Not now</button>
+      </div>
+    </div>
+  </Alert>
+</div>
 
 <main class="wrap" :class.loading="app.loading" :aria-busy="app.loading ? 'true' : 'false'">
   <div :if="app.toast" class="toast" :class="'toast-' + app.toast.kind" data-tone="light" role="status">{{ app.toast.text }}</div>

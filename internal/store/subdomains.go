@@ -143,6 +143,8 @@ type Key struct {
 	PublicKey   string
 	CreatedAt   time.Time
 	LastUsedAt  time.Time
+	// UserKeyID is the account key this one was added from, or 0.
+	UserKeyID int64
 }
 
 // Type is the key algorithm, e.g. ssh-ed25519.
@@ -177,7 +179,7 @@ func (s *Store) AddKey(ctx context.Context, subdomainID int64, name string, key 
 // KeysBySubdomain lists the keys authorized on a subdomain.
 func (s *Store) KeysBySubdomain(ctx context.Context, subdomainID int64) ([]*Key, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, subdomain_id, name, fingerprint, public_key, created_at, last_used_at
+		SELECT id, subdomain_id, name, fingerprint, public_key, created_at, last_used_at, COALESCE(user_key_id, 0)
 		FROM ssh_keys WHERE subdomain_id = ? ORDER BY created_at, id`, subdomainID)
 	if err != nil {
 		return nil, err
@@ -187,7 +189,7 @@ func (s *Store) KeysBySubdomain(ctx context.Context, subdomainID int64) ([]*Key,
 	for rows.Next() {
 		var k Key
 		var created, used int64
-		if err := rows.Scan(&k.ID, &k.SubdomainID, &k.Name, &k.Fingerprint, &k.PublicKey, &created, &used); err != nil {
+		if err := rows.Scan(&k.ID, &k.SubdomainID, &k.Name, &k.Fingerprint, &k.PublicKey, &created, &used, &k.UserKeyID); err != nil {
 			return nil, err
 		}
 		k.CreatedAt, k.LastUsedAt = fromUnix(created), fromUnix(used)
@@ -202,8 +204,8 @@ func (s *Store) DeleteKey(ctx context.Context, subdomainID, keyID int64) (*Key, 
 	var created, used int64
 	err := s.db.QueryRowContext(ctx, `
 		DELETE FROM ssh_keys WHERE id = ? AND subdomain_id = ?
-		RETURNING id, subdomain_id, name, fingerprint, public_key, created_at, last_used_at`,
-		keyID, subdomainID).Scan(&k.ID, &k.SubdomainID, &k.Name, &k.Fingerprint, &k.PublicKey, &created, &used)
+		RETURNING id, subdomain_id, name, fingerprint, public_key, created_at, last_used_at, COALESCE(user_key_id, 0)`,
+		keyID, subdomainID).Scan(&k.ID, &k.SubdomainID, &k.Name, &k.Fingerprint, &k.PublicKey, &created, &used, &k.UserKeyID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -244,14 +246,17 @@ type Grant struct {
 }
 
 // GrantsForKey lists the subdomains the key with this fingerprint may use.
-// Subdomains of disabled users are skipped.
+// Subdomains of disabled users are skipped, and so are keys added from the
+// account of a disabled user.
 func (s *Store) GrantsForKey(ctx context.Context, fingerprint string) ([]Grant, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT k.id, k.name, k.public_key, d.id, d.name, d.access, u.id, u.email, u.added, u.role
 		FROM ssh_keys k
 		JOIN subdomains d ON d.id = k.subdomain_id
 		JOIN users u ON u.id = d.user_id
-		WHERE k.fingerprint = ? AND u.disabled = 0
+		LEFT JOIN user_keys uk ON uk.id = k.user_key_id
+		LEFT JOIN users ku ON ku.id = uk.user_id
+		WHERE k.fingerprint = ? AND u.disabled = 0 AND (k.user_key_id IS NULL OR ku.disabled = 0)
 		ORDER BY d.name`, fingerprint)
 	if err != nil {
 		return nil, err

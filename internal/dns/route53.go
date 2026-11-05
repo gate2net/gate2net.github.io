@@ -22,8 +22,9 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:  "route53",
-		Title: "Amazon Route 53",
+		Name:    "route53",
+		Title:   "Amazon Route 53",
+		Summary: "An access key, or the EC2 instance’s role",
 		Help: "An IAM user or role allowed route53:ListHostedZonesByName, route53:ListResourceRecordSets and\n" +
 			"route53:ChangeResourceRecordSets on the hosted zone. Without keys here, AWS_ACCESS_KEY_ID,\n" +
 			"AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN are used, then the EC2 instance's role.",

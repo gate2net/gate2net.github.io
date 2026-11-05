@@ -16,6 +16,8 @@ export const TITLES = {
   switch: "Switch",
   segmented: "Segmented",
   "choice-cards": "ChoiceCards",
+  select: "Select",
+  "file-picker": "FilePicker",
   "otp-input": "OtpInput",
   tabs: "Tabs",
   modal: "Modal",
@@ -287,6 +289,62 @@ export const USAGE = {
     font-family: var(--ig-font-mono);
     font-size: var(--ig-text-md);
   }
+</style>
+`,
+  },
+
+  select: {
+    file: "provider-picker.html",
+    lead: "One of a list too long for side by side: the choice goes up through :model, and each option can say what it needs.",
+    code: `<script :setup>
+  // Which DNS provider serves the zone, and what it asks for.
+  const Select = await import("@theme/components/select.html")
+
+  const PROVIDERS = [
+    { value: "cloudflare", label: "Cloudflare", hint: "An API token", icon: "globe" },
+    { value: "gcp", label: "Google Cloud DNS", hint: "A service account key", icon: "server" },
+    { value: "route53", label: "Amazon Route 53", hint: "An access key", icon: "key" },
+  ]
+  let provider = "cloudflare"
+</script>
+
+<label>DNS provider
+  <Select :model="provider" :items="PROVIDERS" />
+</label>
+<p>It asks for {{ PROVIDERS.find(p => p.value === provider).hint.toLowerCase() }}.</p>
+
+<style scoped>
+  label { display: grid; gap: var(--ig-space-2); font-weight: var(--ig-weight-semibold); }
+  p { color: var(--ig-fg-muted); }
+</style>
+`,
+  },
+
+  "file-picker": {
+    file: "key-upload.html",
+    lead: "A file read in the browser and sent like any setting: pick brings its name and content.",
+    code: `<script :setup>
+  // A service account's key, read from the file it came in.
+  const FilePicker = await import("@theme/components/file-picker.html")
+
+  let key = null
+  const picked = file => {
+    try {
+      key = JSON.parse(file.text)
+    } catch {
+      key = { error: file.name + " is not JSON" }
+    }
+  }
+</script>
+
+<label>Service account key
+  <FilePicker accept=".json,application/json" button="Choose the key" placeholder="No key chosen" @pick="picked($event.detail)" />
+</label>
+<p :if="key">{{ key.error || "For " + (key.client_email || "an unknown account") }}</p>
+
+<style scoped>
+  label { display: grid; gap: var(--ig-space-2); font-weight: var(--ig-weight-semibold); }
+  p { color: var(--ig-fg-muted); }
 </style>
 `,
   },

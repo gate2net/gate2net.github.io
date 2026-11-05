@@ -12,6 +12,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/jgermade/intergate/internal/store"
 )
 
 const msgInternal = "Something went wrong. Please try again."
@@ -42,11 +44,11 @@ type boot struct {
 	TCP       *bootTCP   `json:"tcp"`
 	// Wildcard is set when intergate gets its certificates from Let's
 	// Encrypt: the Admin page's DNS tab can get a wildcard one.
-	Wildcard  bool        `json:"wildcard,omitempty"`
-	User      *me         `json:"user"`
-	CSRF      string      `json:"csrf,omitempty"`
-	EmailFlow string      `json:"email_flow,omitempty"`
-	Error     *pageErrMsg `json:"error,omitempty"`
+	Wildcard  *bootWildcard `json:"wildcard,omitempty"`
+	User      *me           `json:"user"`
+	CSRF      string        `json:"csrf,omitempty"`
+	EmailFlow string        `json:"email_flow,omitempty"`
+	Error     *pageErrMsg   `json:"error,omitempty"`
 	// Setup is set while intergate is not set up: the page shows the
 	// setup instead of anything else.
 	Setup *bootSetup `json:"setup,omitempty"`
@@ -68,6 +70,18 @@ type bootTCP struct {
 	Last     int    `json:"last"`
 	MaxPorts int    `json:"max_ports"`
 	Host     string `json:"host"`
+}
+
+// bootWildcard is where the wildcard certificate stands, for the Admin
+// page's DNS tab and, for owners, the banner that asks for a DNS provider.
+type bootWildcard struct {
+	// Provider is the DNS provider's name, if one is set up.
+	Provider string `json:"provider,omitempty"`
+	// Ready is set while the wildcard certificate is in use.
+	Ready bool `json:"ready,omitempty"`
+	// Resolves tells whether *.<domain> resolves, looked up for owners
+	// while there is no provider.
+	Resolves bool `json:"resolves,omitempty"`
 }
 
 // me is the signed-in user.
@@ -97,7 +111,6 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, status int, pe
 		Passkeys:  s.webauthn != nil,
 		Providers: []bootLink{},
 		Limits:    bootLimits{Subdomains: s.cfg.Limits.SubdomainsPerUser, Keys: s.cfg.Limits.KeysPerSubdomain},
-		Wildcard:  s.wildcard != nil,
 		Error:     perr,
 	}
 	if s.cfg.TCP.Enabled() {
@@ -106,6 +119,13 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, status int, pe
 	}
 	for _, p := range s.providers {
 		b.Providers = append(b.Providers, bootLink{p.Name(), "/auth/" + url.PathEscape(p.ID()) + "/login"})
+	}
+	if s.wildcard != nil {
+		st := s.wildcard.Status()
+		b.Wildcard = &bootWildcard{Provider: st.Provider, Ready: !st.NotAfter.IsZero() && time.Now().Before(st.NotAfter)}
+		if a := currentAuth(r); a != nil && a.Role == store.RoleOwner && b.Wildcard.Provider == "" && !b.Wildcard.Ready {
+			b.Wildcard.Resolves = s.wildcardResolves(r.Context())
+		}
 	}
 	if a := currentAuth(r); a != nil {
 		u := a.User

@@ -2,7 +2,7 @@
   // For administrators: every subdomain with its tunnel, every account, the
   // SMTP relay and the DNS provider of the wildcard certificate, which
   // owners can change.
-  const { app, toast } = await import("@ui/lib/store.js")
+  const { app, query, toast } = await import("@ui/lib/store.js")
   const { api } = await import("@ui/lib/api.js")
   const { ago, date, plural } = await import("@ui/lib/format.js")
   const StatusBadge = await import("@ui/components/status-badge.html")
@@ -15,14 +15,17 @@
   const Facts = await import("@theme/components/facts.html")
   const Icon = await import("@theme/components/icon.html")
   const Modal = await import("@theme/components/modal.html")
+  const Select = await import("@theme/components/select.html")
+  const FilePicker = await import("@theme/components/file-picker.html")
   const OtpInput = await import("@theme/components/otp-input.html")
   const Switch = await import("@theme/components/switch.html")
   const Tabs = await import("@theme/components/tabs.html")
 
   document.title = "Admin · intergate"
 
-  // Which tab shows: users, subdomains, relay or dns.
-  let tab = "users"
+  // Which tab shows: users, subdomains, relay or dns (?tab=, from the
+  // banner that asks for a DNS provider).
+  let tab = ["subdomains", "relay"].includes(query("tab")) || (query("tab") === "dns" && app.wildcard) ? query("tab") : "users"
   let subdomains = []
   let users = []
   const load = async () => {
@@ -159,9 +162,14 @@
     relayError = ""
     editingRelay = true
   }
+  const TLS_ITEMS = [
+    { value: "starttls", label: "STARTTLS", hint: "Usually port 587", icon: "lock" },
+    { value: "tls", label: "TLS", hint: "Usually port 465", icon: "lock" },
+    { value: "none", label: "None", hint: "A relay on this server only", icon: "warning" },
+  ]
   // The port follows the encryption, unless it was changed.
   const setRelayTLS = value => {
-    if (relayPort === PORTS[relayTLS]) relayPort = PORTS[value]
+    if (Object.values(PORTS).includes(relayPort)) relayPort = PORTS[value]
     relayTLS = value
   }
   const proposeRelay = async () => {
@@ -217,6 +225,11 @@
   const tabChanged = value => {
     if (value === "dns" && !dnsLoaded) loadDNS()
   }
+  if (tab === "dns") loadDNS()
+  // The banner that asks for a DNS provider follows what is saved.
+  const followDNS = () => {
+    if (app.wildcard) app.wildcard = { ...app.wildcard, provider: dns.provider || "" }
+  }
   $: cert = dns.certificate || {}
   $: certValid = cert.not_after && new Date(cert.not_after) > new Date()
   $: dnsFacts = [
@@ -237,6 +250,7 @@
   let dnsValues = {}
   let dnsRecord = false
   $: spec = dns.providers.find(p => p.name === dnsProvider) || { fields: [], help: "" }
+  $: providerItems = dns.providers.map(p => ({ value: p.name, label: p.title, hint: p.summary }))
   const editDNS = () => {
     dnsProvider = dns.provider && dns.source === "dashboard" ? dns.provider : (dns.providers[0] || {}).name
     dnsValues = {}
@@ -254,21 +268,15 @@
     dnsValues = { ...dnsValues, [field.name]: value }
   }
   // A key file is read here, and its content sent like any setting.
-  let uploaded = {}
-  const readFile = async (field, event) => {
-    const file = event.target.files[0]
-    if (!file) return
-    setValue(field, await file.text())
-    uploaded = { ...uploaded, [field.name]: file.name }
-  }
   const stored = field => dns.source === "dashboard" && dns.provider === dnsProvider && dns.settings?.[field.name] === "stored"
   const fieldHint = field =>
-    stored(field) ? (field.upload ? "Choose a file to replace the stored one." : "Empty keeps the stored one.") : field.description || ""
+    stored(field) ? (field.upload ? "Stored, encrypted: choose a file to replace it." : "Empty keeps the stored one.") : field.description || ""
   const saveDNS = async () => {
     dnsBusy = true
     dnsError = ""
     try {
       dns = await api("PUT", "/admin/dns", { provider: dnsProvider, settings: dnsValues, wildcard_record: dnsRecord })
+      followDNS()
       editingDNS = false
       dnsWatchUntil = Date.now() + 15000
       toast("The DNS provider is saved. intergate is getting the wildcard certificate.")
@@ -290,6 +298,7 @@
     removingDNS = false
     try {
       dns = await api("DELETE", "/admin/dns")
+      followDNS()
       toast("The DNS provider is removed.")
     } catch (e) {
       toast(e.message, "error")
@@ -446,11 +455,7 @@
     </label>
     <div class="form-grid pair">
       <label>Encryption
-        <select class="field" name="tls" @change="setRelayTLS($event.target.value)">
-          <option value="starttls" :selected="relayTLS === 'starttls'">STARTTLS</option>
-          <option value="tls" :selected="relayTLS === 'tls'">TLS</option>
-          <option value="none" :selected="relayTLS === 'none'">None (local relay)</option>
-        </select>
+        <Select name="tls" :model="relayTLS" :items="TLS_ITEMS" @change="setRelayTLS($event.detail)" />
       </label>
       <label>Port
         <input name="port" required inputmode="numeric" pattern="[0-9]{1,5}" :value="relayPort" @input="relayPort = $event.target.value">
@@ -497,14 +502,13 @@
     <form :elseif="editingDNS" class="form" @submit.prevent="saveDNS">
       <Alert :if="dnsError" tone="bad" flush>{{ dnsError }}</Alert>
       <label>DNS provider <span class="hint">The service that serves the zone of {{ app.domain }}.</span>
-        <select class="field" name="provider" @change="chooseProvider($event.target.value)">
-          <option :each="p in dns.providers" :key="p.name" :value="p.name" :selected="p.name === dnsProvider">{{ p.title }}</option>
-        </select>
+        <Select name="provider" :model="dnsProvider" :items="providerItems" @change="chooseProvider($event.detail)" />
       </label>
       <p class="hint help">{{ spec.help }}</p>
       <label :each="f in spec.fields" :key="spec.name + '.' + f.name">{{ f.title }}
-        <span :if="fieldHint(f)" class="hint">{{ fieldHint(f) }}<span :if="uploaded[f.name]"> Chosen: {{ uploaded[f.name] }}.</span></span>
-        <input :if="f.upload" type="file" :name="f.name" accept=".json,application/json" @change="readFile(f, $event)">
+        <span :if="fieldHint(f)" class="hint">{{ fieldHint(f) }}</span>
+        <FilePicker :if="f.upload" :name="f.name" accept=".json,application/json" button="Choose the file"
+                    :placeholder="stored(f) ? 'The stored one' : 'No file chosen'" @pick="setValue(f, $event.detail.text)" />
         <input :elseif="f.secret" type="password" :name="f.name" autocomplete="new-password" spellcheck="false" :required="f.required && !stored(f)"
                :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
         <input :else :name="f.name" autocomplete="off" autocapitalize="off" spellcheck="false" :required="f.required"

@@ -235,7 +235,8 @@ func TestWildcardCertificateFromTheDashboard(t *testing.T) {
 
 	owner, helper := h.browser(), h.browser()
 	ownerBoot := h.login(owner, "admin@example.com")
-	if !ownerBoot.Wildcard || ownerBoot.User.Role != "owner" {
+	// No provider, no wildcard certificate: owners are asked for one.
+	if ownerBoot.Wildcard == nil || ownerBoot.Wildcard.Provider != "" || ownerBoot.Wildcard.Ready || ownerBoot.User.Role != "owner" {
 		t.Fatalf("boot %+v", ownerBoot)
 	}
 	// A new subdomain gets its certificate as it is registered, before
@@ -317,6 +318,10 @@ func TestWildcardCertificateFromTheDashboard(t *testing.T) {
 	if v := h.ca.Zone.Values("*."+domain, "CNAME"); !slices.Equal(v, []string{domain}) {
 		t.Errorf("wildcard record %v", v)
 	}
+	// The page says so, and the banner goes.
+	if _, body := h.send(owner, "GET", "/", nil, ""); !strings.Contains(body, `"wildcard":{"provider":"fakedns","ready":true}`) {
+		t.Errorf("boot after the certificate: %s", bootRE.FindString(body))
+	}
 	// With it, new subdomains need no certificate of their own.
 	issued := len(h.ca.Issued())
 	if resp, body := h.send(owner, "POST", "/api/subdomains", map[string]string{"name": "late"}, ownerBoot.CSRF); resp.StatusCode != http.StatusCreated {
@@ -392,7 +397,7 @@ func TestNoDNSTabWithoutACME(t *testing.T) {
 	if resp, _ := call(t, c, "GET", "/api/admin/dns", nil); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("DNS tab without ACME: %d", resp.StatusCode)
 	}
-	if _, boot := page(t, c, "/admin"); boot.Wildcard {
+	if _, boot := page(t, c, "/admin"); boot.Wildcard != nil {
 		t.Error("boot offers the DNS tab without ACME")
 	}
 }
