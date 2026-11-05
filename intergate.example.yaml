@@ -22,7 +22,8 @@ http:
     # cert_file: /etc/intergate/fullchain.pem
     # key_file: /etc/intergate/privkey.pem
     # ...or certificates from Let's Encrypt, issued on demand for the
-    # dashboard and every registered subdomain:
+    # dashboard and every registered subdomain (or one wildcard certificate
+    # for all of them, with a DNS provider: see dns below):
     acme:
       enabled: true
       email: admin@example.com
@@ -102,6 +103,33 @@ limits:
 #   ports: 30000-30019
 #   max_ports: 5                    # per subdomain
 #   public_host: gate.example.com   # defaults to the SSH host
+
+# A DNS provider for the zone of the domain: intergate then gets one
+# certificate for gate.example.com and *.gate.example.com from Let's Encrypt
+# (DNS-01 challenge) instead of one per subdomain. Owners can also set it up
+# in the dashboard (Admin → DNS), with the secrets stored encrypted; what
+# this file sets wins. Needs http.tls.acme.
+# dns:
+#   provider: cloudflare            # cloudflare, gcp, route53, digitalocean or exec
+#   cloudflare:
+#     api_token: ${CLOUDFLARE_API_TOKEN}   # Zone → DNS → Edit
+#     # zone_id: ...                       # else found (needs Zone → Zone → Read)
+#   # gcp:
+#   #   project: my-project               # else from the key or Google Cloud
+#   #   managed_zone: example-com         # else found from the domain
+#   #   credentials_file: /etc/intergate/gcp-dns.json   # else Application Default Credentials
+#   # route53:                            # keys, else AWS_* or the EC2 instance's role
+#   #   access_key_id: ${AWS_ACCESS_KEY_ID}
+#   #   secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+#   #   hosted_zone_id: Z0123456789       # else found from the domain
+#   # digitalocean:
+#   #   api_token: ${DIGITALOCEAN_TOKEN}
+#   # exec:                               # any other DNS service: a program of yours,
+#   #   command: /etc/intergate/dns-hook.sh   # run as `PROGRAM set NAME TYPE TTL VALUE...`
+#   #                                         # and `PROGRAM delete NAME TYPE`
+#   wildcard_record: true     # also point *.gate.example.com at gate.example.com (CNAME)
+#   # propagation_timeout: 2m # how long the nameservers may take to serve the records
+#   # nameservers: [ns1.example.net]   # ask these instead of the zone's own
 
 # Names nobody can register, on top of the built-in list (www, admin, api...).
 reserved_subdomains: []

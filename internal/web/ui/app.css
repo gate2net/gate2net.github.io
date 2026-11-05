@@ -339,6 +339,11 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 legend { font-weight: var(--ig-weight-semibold); font-size: var(--ig-text-md); margin-bottom: var(--ig-space-2); padding: 0; }
 legend .hint { display: block; margin-top: 0; }
 .actions { display: flex; align-items: center; gap: 1.125rem; flex-wrap: wrap; margin-top: var(--ig-space-6); }
+/* A switch beside what it turns on, and a hint under that. */
+.switch-row { display: flex; align-items: flex-start; gap: var(--ig-space-4); }
+.switch-row .hint { margin-top: var(--ig-space-1); }
+/* A provider's help keeps its lines. */
+.hint.help { white-space: pre-line; margin-top: calc(-1 * var(--ig-space-4)); }
 .form .actions { margin-top: 0; }
 .form-actions { display: flex; justify-content: flex-end; gap: var(--ig-space-4); }
 /* What adds to the list in the card above it, centred under it. */

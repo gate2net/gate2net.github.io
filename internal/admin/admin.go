@@ -20,6 +20,7 @@ import (
 	"github.com/jgermade/intergate/internal/manage"
 	"github.com/jgermade/intergate/internal/settings"
 	"github.com/jgermade/intergate/internal/store"
+	"github.com/jgermade/intergate/internal/wildcard"
 )
 
 // Status describes the running server.
@@ -35,6 +36,9 @@ type Status struct {
 	// Setup is set while intergate is not set up: email delivery or an
 	// owner is missing (see `intergate setup-url`).
 	Setup bool `json:"setup,omitempty"`
+	// Certificate describes the wildcard certificate, when intergate gets
+	// its certificates from Let's Encrypt.
+	Certificate *wildcard.Status `json:"certificate,omitempty"`
 }
 
 // Email describes email delivery, without its password.
@@ -95,6 +99,9 @@ type Handler struct {
 	version  string
 	started  time.Time
 	mux      *http.ServeMux
+	// Certificate describes the wildcard certificate, if there is one to
+	// describe.
+	Certificate func() *wildcard.Status
 }
 
 // NewHandler returns the admin API handler.
@@ -200,7 +207,12 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
+	var cert *wildcard.Status
+	if h.Certificate != nil {
+		cert = h.Certificate()
+	}
 	writeJSON(w, http.StatusOK, Status{
+		Certificate:   cert,
 		Setup:         setup,
 		Version:       h.version,
 		PID:           os.Getpid(),

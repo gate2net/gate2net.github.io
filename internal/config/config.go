@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jgermade/intergate/internal/dns"
 )
 
 // Config is the top-level configuration.
@@ -34,6 +36,7 @@ type Config struct {
 	Admin  AdminConfig `yaml:"admin"`
 	Limits Limits      `yaml:"limits"`
 	TCP    TCPConfig   `yaml:"tcp"`
+	DNS    DNSConfig   `yaml:"dns"`
 
 	// ReservedSubdomains are names nobody can register, on top of the
 	// built-in list (www, admin, api, ...).
@@ -71,6 +74,29 @@ type ACMEConfig struct {
 	Email        string `yaml:"email"`
 	DirectoryURL string `yaml:"directory_url"`
 }
+
+// DNSConfig is a DNS provider for the zone of the dashboard's domain:
+// intergate gets one Let's Encrypt certificate for the domain and all its
+// subdomains through it (with ACME's DNS-01 challenge), instead of one per
+// subdomain. Without it, an owner can set one up from the dashboard.
+type DNSConfig struct {
+	// Provider is cloudflare, gcp, route53, digitalocean or exec.
+	Provider string `yaml:"provider"`
+	// WildcardRecord also points *.<domain> at the domain, with a CNAME.
+	WildcardRecord bool `yaml:"wildcard_record"`
+	// PropagationTimeout is how long to wait for the zone's nameservers
+	// to serve the challenge's records. Default 2m.
+	PropagationTimeout time.Duration `yaml:"propagation_timeout"`
+	// Nameservers are asked for the challenge's records instead of the
+	// zone's own (found through its NS records): host or host:port.
+	Nameservers []string `yaml:"nameservers"`
+	// Settings are the providers' settings, each under its name:
+	// cloudflare: {api_token: ...}.
+	Settings map[string]map[string]string `yaml:",inline"`
+}
+
+// Options returns the settings of the chosen provider.
+func (d DNSConfig) Options() map[string]string { return d.Settings[d.Provider] }
 
 type SSHConfig struct {
 	Listen      string `yaml:"listen"`
@@ -338,6 +364,9 @@ func (c *Config) setDefaults() {
 	if c.TCP.MaxPorts == 0 {
 		c.TCP.MaxPorts = 5
 	}
+	if c.DNS.PropagationTimeout == 0 {
+		c.DNS.PropagationTimeout = 2 * time.Minute
+	}
 	for i := range c.Auth.Providers {
 		p := &c.Auth.Providers[i]
 		if p.Name == "" {
@@ -358,6 +387,15 @@ func (c *Config) resolvePaths(base string) {
 	for _, p := range []*string{&c.DataDir, &c.HTTP.TLS.CertFile, &c.HTTP.TLS.KeyFile, &c.SSH.HostKeyFile, &c.Admin.Socket} {
 		if *p != "" && !filepath.IsAbs(*p) {
 			*p = filepath.Join(base, *p)
+		}
+	}
+	// The DNS providers' files too: dns.exec.command and the like.
+	for name, opts := range c.DNS.Settings {
+		spec, _ := dns.Lookup(name)
+		for _, f := range spec.Fields {
+			if v := opts[f.Name]; f.Path && v != "" && !filepath.IsAbs(v) {
+				opts[f.Name] = filepath.Join(base, v)
+			}
 		}
 	}
 }
@@ -437,7 +475,48 @@ func (c *Config) validate() error {
 			return fmt.Errorf("%s.type must be github or oidc", where)
 		}
 	}
+	if err := c.validateDNS(); err != nil {
+		return err
+	}
 	return c.TCP.parse()
+}
+
+func (c *Config) validateDNS() error {
+	d := c.DNS
+	for name := range d.Settings {
+		if _, ok := dns.Lookup(name); !ok {
+			return fmt.Errorf("dns.%s: unknown setting or DNS provider (providers: %s)", name, strings.Join(dns.Names(), ", "))
+		}
+	}
+	if d.PropagationTimeout < 10*time.Second || d.PropagationTimeout > time.Hour {
+		return errors.New("dns.propagation_timeout must be between 10s and 1h")
+	}
+	for i, ns := range d.Nameservers {
+		if _, _, err := net.SplitHostPort(ns); err != nil {
+			ns = net.JoinHostPort(strings.Trim(ns, "[]"), "53")
+		}
+		host, port, err := net.SplitHostPort(ns)
+		if n, perr := strconv.Atoi(port); err != nil || host == "" || perr != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("dns.nameservers: %q is not a host or host:port", d.Nameservers[i])
+		}
+		c.DNS.Nameservers[i] = ns
+	}
+	if d.Provider == "" {
+		if len(d.Settings) > 0 || d.WildcardRecord {
+			return errors.New("dns.provider is required with dns settings")
+		}
+		return nil
+	}
+	if !c.HTTP.TLS.ACME.Enabled {
+		return errors.New("dns: a DNS provider gets intergate a wildcard certificate from Let's Encrypt: enable http.tls.acme")
+	}
+	if _, ok := dns.Lookup(d.Provider); !ok {
+		return fmt.Errorf("dns.provider: unknown DNS provider %q (one of %s)", d.Provider, strings.Join(dns.Names(), ", "))
+	}
+	if err := dns.Validate(d.Provider, d.Options()); err != nil {
+		return fmt.Errorf("dns.%w", err)
+	}
+	return nil
 }
 
 // PasskeysEnabled reports whether users can sign in with passkeys.

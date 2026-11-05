@@ -23,11 +23,13 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/jgermade/intergate/internal/config"
+	"github.com/jgermade/intergate/internal/dns"
 	"github.com/jgermade/intergate/internal/mail"
 	"github.com/jgermade/intergate/internal/manage"
 	"github.com/jgermade/intergate/internal/settings"
 	"github.com/jgermade/intergate/internal/store"
 	"github.com/jgermade/intergate/internal/tunnel"
+	"github.com/jgermade/intergate/internal/wildcard"
 )
 
 //go:embed templates ui
@@ -59,6 +61,11 @@ type Options struct {
 	Version string
 	// HostKey is the SSH host key's fingerprint, for /tunnel.sh.
 	HostKey string
+	// Wildcard keeps the wildcard certificate, when intergate gets its
+	// certificates from Let's Encrypt; DNSEnv is what its DNS providers
+	// get.
+	Wildcard *wildcard.Manager
+	DNSEnv   dns.Env
 }
 
 // Server is the HTTP handler for the dashboard and all tunnels.
@@ -71,23 +78,27 @@ type Server struct {
 	mailer    mail.Sender
 	mailerFor func(config.EmailConfig) mail.Sender
 	relay     relayChanges
-	log       *slog.Logger
-	signer    signer
-	nonces    *nonceSet
-	codes     *codeStore
-	webauthn  *webauthn.WebAuthn
-	cookies   cookieNames
-	providers []provider
-	shell     *template.Template
-	theme     *template.Template
-	tunnelErr *template.Template
-	tunnelSh  *texttemplate.Template
-	tunnelPs  *texttemplate.Template
-	hostKey   string
-	ui        map[string]uiFile
-	dashboard http.Handler
-	proxy     *httputil.ReverseProxy
-	version   string
+	wildcard  *wildcard.Manager
+	dnsEnv    dns.Env
+	// wildcardCheck caches whether *.<domain> resolves.
+	wildcardCheck wildcardCheck
+	log           *slog.Logger
+	signer        signer
+	nonces        *nonceSet
+	codes         *codeStore
+	webauthn      *webauthn.WebAuthn
+	cookies       cookieNames
+	providers     []provider
+	shell         *template.Template
+	theme         *template.Template
+	tunnelErr     *template.Template
+	tunnelSh      *texttemplate.Template
+	tunnelPs      *texttemplate.Template
+	hostKey       string
+	ui            map[string]uiFile
+	dashboard     http.Handler
+	proxy         *httputil.ReverseProxy
+	version       string
 }
 
 type cookieNames struct {
@@ -117,6 +128,8 @@ func New(o Options) (*Server, error) {
 		codes:     newCodeStore(),
 		version:   o.Version,
 		hostKey:   o.HostKey,
+		wildcard:  o.Wildcard,
+		dnsEnv:    o.DNSEnv,
 	}
 	switch {
 	case s.mailerFor != nil:
@@ -288,6 +301,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/admin/email", admin(s.relayOwner(s.handleAdminRelayChange)))
 	mux.Handle("POST /api/admin/email/confirm", admin(s.relayOwner(s.handleAdminRelayConfirm)))
 	mux.Handle("DELETE /api/admin/email/pending", admin(s.relayOwner(s.handleAdminRelayCancel)))
+	mux.Handle("GET /api/admin/dns", admin(s.dnsAvailable(s.handleAdminDNS)))
+	mux.Handle("PUT /api/admin/dns", admin(s.dnsAvailable(s.dnsOwner(s.handleAdminDNSChange))))
+	mux.Handle("DELETE /api/admin/dns", admin(s.dnsAvailable(s.dnsOwner(s.handleAdminDNSDelete))))
+	mux.Handle("POST /api/admin/dns/retry", admin(s.dnsAvailable(s.dnsOwner(s.handleAdminDNSRetry))))
 
 	return s.securityHeaders(s.withSession(mux))
 }

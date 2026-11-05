@@ -1,9 +1,10 @@
 <script :setup>
-  // For administrators: every subdomain with its tunnel, every account, and
-  // the SMTP relay, which owners can change.
+  // For administrators: every subdomain with its tunnel, every account, the
+  // SMTP relay and the DNS provider of the wildcard certificate, which
+  // owners can change.
   const { app, toast } = await import("@ui/lib/store.js")
   const { api } = await import("@ui/lib/api.js")
-  const { ago, plural } = await import("@ui/lib/format.js")
+  const { ago, date, plural } = await import("@ui/lib/format.js")
   const StatusBadge = await import("@ui/components/status-badge.html")
   const AccessBadge = await import("@ui/components/access-badge.html")
   const Alert = await import("@theme/components/alert.html")
@@ -20,7 +21,7 @@
 
   document.title = "Admin · intergate"
 
-  // Which tab shows: users, subdomains or relay.
+  // Which tab shows: users, subdomains, relay or dns.
   let tab = "users"
   let subdomains = []
   let users = []
@@ -36,15 +37,21 @@
   $: tabs = [
     { value: "users", label: "Users", count: users.length },
     { value: "subdomains", label: "Subdomains", count: subdomains.length, extra: online ? online + " online" : "" },
-    { value: "relay", label: "SMTP relay" },
+    { value: "relay", label: "SMTP relay", short: "SMTP" },
+    ...(app.wildcard ? [{ value: "dns", label: "DNS" }] : []),
   ]
   // How much of tcp.ports the subdomains hold.
   $: portsUsed = subdomains.reduce((n, sub) => n + sub.ports, 0)
 
   $attached(() => {
     const timer = setInterval(() => document.hidden || load(), 5000)
+    // While a certificate is being issued, its steps show as they go.
+    const dnsTimer = setInterval(() => {
+      if (tab === "dns" && !document.hidden && (dns.certificate?.issuing || Date.now() < dnsWatchUntil)) loadDNS()
+    }, 2000)
     const off = $detached(() => {
       clearInterval(timer)
+      clearInterval(dnsTimer)
       off()
     })
   })
@@ -192,6 +199,103 @@
     await loadRelay()
   }
 
+  // The DNS provider: through it, one wildcard certificate for the domain
+  // and its subdomains. Loaded when its tab opens, since it looks up
+  // whether *.<domain> resolves. A change saves once intergate has added
+  // and removed a record through the new provider.
+  let dns = { providers: [], certificate: {} }
+  let dnsLoaded = false
+  let dnsWatchUntil = 0
+  const loadDNS = async () => {
+    try {
+      dns = await api("GET", "/admin/dns")
+      dnsLoaded = true
+    } catch (e) {
+      toast(e.message, "error")
+    }
+  }
+  const tabChanged = value => {
+    if (value === "dns" && !dnsLoaded) loadDNS()
+  }
+  $: cert = dns.certificate || {}
+  $: certValid = cert.not_after && new Date(cert.not_after) > new Date()
+  $: dnsFacts = [
+    { label: "Certificate", value: certValid ? "*." + app.domain : "One per subdomain", icon: "lock", hue: "green" },
+    { label: "Valid until", value: certValid ? date(cert.not_after) : "", icon: "calendar", hue: "blue" },
+    { label: "Renews", value: certValid ? (cert.provider ? date(cert.renew_at) : "Not renewed: no provider") : "", icon: "clock", hue: "purple" },
+    { label: "DNS provider", value: dns.provider ? dns.provider_title || dns.provider : "None", icon: "server", hue: "orange" },
+    { label: "Issuer", value: certValid ? cert.issuer : "", icon: "shield", hue: "pink" },
+    { label: "*." + app.domain, value: cert.record ? "CNAME to " + app.domain : dns.wildcard_record ? "Pending" : "", icon: "globe", hue: "teal" },
+  ]
+  $: dnsBadge = dns.source === "config" ? "configuration file" : dns.source ? "set up in the dashboard" : "not set up"
+  $: nextTry = cert.next_try && !String(cert.next_try).startsWith("0001-") ? new Date(cert.next_try) : null
+
+  let editingDNS = false
+  let dnsBusy = false
+  let dnsError = ""
+  let dnsProvider = ""
+  let dnsValues = {}
+  let dnsRecord = false
+  $: spec = dns.providers.find(p => p.name === dnsProvider) || { fields: [], help: "" }
+  const editDNS = () => {
+    dnsProvider = dns.provider && dns.source === "dashboard" ? dns.provider : (dns.providers[0] || {}).name
+    dnsValues = {}
+    for (const [k, v] of Object.entries(dns.settings || {})) if (v !== "stored") dnsValues[k] = v
+    dnsRecord = dns.source ? dns.wildcard_record : !dns.wildcard_resolves
+    dnsError = ""
+    editingDNS = true
+  }
+  const chooseProvider = name => {
+    dnsProvider = name
+    dnsValues = {}
+    dnsError = ""
+  }
+  const setValue = (field, value) => {
+    dnsValues = { ...dnsValues, [field.name]: value }
+  }
+  // A key file is read here, and its content sent like any setting.
+  let uploaded = {}
+  const readFile = async (field, event) => {
+    const file = event.target.files[0]
+    if (!file) return
+    setValue(field, await file.text())
+    uploaded = { ...uploaded, [field.name]: file.name }
+  }
+  const stored = field => dns.source === "dashboard" && dns.provider === dnsProvider && dns.settings?.[field.name] === "stored"
+  const fieldHint = field =>
+    stored(field) ? (field.upload ? "Choose a file to replace the stored one." : "Empty keeps the stored one.") : field.description || ""
+  const saveDNS = async () => {
+    dnsBusy = true
+    dnsError = ""
+    try {
+      dns = await api("PUT", "/admin/dns", { provider: dnsProvider, settings: dnsValues, wildcard_record: dnsRecord })
+      editingDNS = false
+      dnsWatchUntil = Date.now() + 15000
+      toast("The DNS provider is saved. intergate is getting the wildcard certificate.")
+    } catch (e) {
+      dnsError = e.message
+    }
+    dnsBusy = false
+  }
+  const retryDNS = async () => {
+    try {
+      dns = await api("POST", "/admin/dns/retry")
+      dnsWatchUntil = Date.now() + 15000
+    } catch (e) {
+      toast(e.message, "error")
+    }
+  }
+  let removingDNS = false
+  const removeDNS = async () => {
+    removingDNS = false
+    try {
+      dns = await api("DELETE", "/admin/dns")
+      toast("The DNS provider is removed.")
+    } catch (e) {
+      toast(e.message, "error")
+    }
+  }
+
   // A user is added in a dialog, with a role: owners only by owners.
   const ROLES = [
     { value: "user", label: "User", hint: "Their own subdomains", icon: "user", hue: "blue" },
@@ -226,7 +330,7 @@
 
 <div class="page-head">
   <h1>Admin</h1>
-  <Tabs label="Admin" :model="tab" :items="tabs" />
+  <Tabs label="Admin" :model="tab" :items="tabs" @change="tabChanged($event.detail)" />
 </div>
 
 <div :if="tab === 'users'" role="tabpanel" aria-label="Users"><Card>
@@ -372,6 +476,68 @@
     <Button @click="editRelay">{{ relay.source ? "Change the SMTP relay" : "Set up an SMTP relay" }}</Button>
   </div>
 </Card></div>
+
+<div :elseif="tab === 'dns'" role="tabpanel" aria-label="DNS"><Card title="Wildcard certificate">
+  <template :slot.aside><Badge>{{ dnsBadge }}</Badge></template>
+  <p class="muted intro">Through your DNS provider, intergate gets one Let’s Encrypt certificate for {{ app.domain }} and every subdomain, instead of one each: new subdomains work at once, and their names stay out of the public certificate logs.</p>
+  <p :if="!dnsLoaded" class="muted">Loading…</p>
+  <div :else>
+    <Alert :if="cert.issuing" tone="info">Getting the wildcard certificate: {{ cert.step }}…</Alert>
+    <Alert :elseif="cert.error" tone="bad">
+      {{ cert.error }}<span :if="nextTry"> intergate tries again at {{ nextTry.toLocaleTimeString() }}.</span>
+      <button :if="dns.editable || (owner && dns.source === 'config')" type="button" class="link" @click="retryDNS">Try again now</button>
+    </Alert>
+    <Alert :elseif="certValid && cert.provider" tone="ok">The wildcard certificate is in use, and renews on its own.</Alert>
+    <Alert :if="cert.record_error" tone="warn">{{ cert.record_error }}</Alert>
+    <Facts columns="3" :items="dnsFacts" />
+
+    <p :if="dns.source === 'config'" class="hint">It is set in the configuration file (<code>dns</code>): change it there and restart intergate.</p>
+    <p :elseif="!dns.editable" class="hint">Only owners can change it.</p>
+
+    <form :elseif="editingDNS" class="form" @submit.prevent="saveDNS">
+      <Alert :if="dnsError" tone="bad" flush>{{ dnsError }}</Alert>
+      <label>DNS provider <span class="hint">The service that serves the zone of {{ app.domain }}.</span>
+        <select class="field" name="provider" @change="chooseProvider($event.target.value)">
+          <option :each="p in dns.providers" :key="p.name" :value="p.name" :selected="p.name === dnsProvider">{{ p.title }}</option>
+        </select>
+      </label>
+      <p class="hint help">{{ spec.help }}</p>
+      <label :each="f in spec.fields" :key="spec.name + '.' + f.name">{{ f.title }}
+        <span :if="fieldHint(f)" class="hint">{{ fieldHint(f) }}<span :if="uploaded[f.name]"> Chosen: {{ uploaded[f.name] }}.</span></span>
+        <input :if="f.upload" type="file" :name="f.name" accept=".json,application/json" @change="readFile(f, $event)">
+        <input :elseif="f.secret" type="password" :name="f.name" autocomplete="new-password" spellcheck="false" :required="f.required && !stored(f)"
+               :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
+        <input :else :name="f.name" autocomplete="off" autocapitalize="off" spellcheck="false" :required="f.required"
+               :value="dnsValues[f.name] || ''" @input="setValue(f, $event.target.value)">
+      </label>
+      <div class="switch-row">
+        <Switch :model="dnsRecord" label="Point the subdomains at this server" />
+        <div>
+          <strong>Point *.{{ app.domain }} at {{ app.domain }}</strong>
+          <div class="hint">A CNAME record, in place of the A, AAAA or CNAME records *.{{ app.domain }} has{{ dns.wildcard_resolves ? " (it resolves already)" : " (it does not resolve yet)" }}.</div>
+        </div>
+      </div>
+      <div class="actions">
+        <Button type="submit" :disabled="dnsBusy">{{ dnsBusy ? "Checking the provider…" : "Check and save" }}</Button>
+        <button type="button" class="link" @click="editingDNS = false">Cancel</button>
+      </div>
+      <p class="hint">intergate adds a TXT record to the zone of {{ app.domain }} and removes it, to check the settings, then saves them and gets the certificate. Secrets are stored encrypted.</p>
+    </form>
+
+    <div :else class="actions">
+      <Button @click="editDNS">{{ dns.source ? "Change the DNS provider" : "Set up a DNS provider" }}</Button>
+      <Button :if="dns.source" variant="secondary" @click="removingDNS = true">Remove</Button>
+    </div>
+  </div>
+</Card></div>
+
+<Modal :open="removingDNS" title="Remove the DNS provider?" @close="removingDNS = false">
+  <p class="muted">intergate stops renewing the wildcard certificate.{{ certValid ? " It is used until " + date(cert.not_after) + "; then" : "" }} Each subdomain gets a certificate of its own again, on its first visit. The DNS records stay as they are.</p>
+  <template :slot.foot>
+    <Button variant="secondary" @click="removingDNS = false">Cancel</Button>
+    <Button variant="danger" @click="removeDNS">Remove</Button>
+  </template>
+</Modal>
 
 <Modal :open="asking" :title="'Delete ' + (deleting ? deleting.email : '') + '?'" @close="asking = false">
   <p class="muted">This removes the account{{ deleting && deleting.subdomains ? ", its " + plural(deleting.subdomains, "subdomain") + " with their SSH keys" : "" }} and its passkeys, and closes any tunnel. If the configuration allows the address, they can sign in again as a new account.</p>

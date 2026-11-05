@@ -19,6 +19,7 @@ import (
 	"github.com/jgermade/intergate/internal/config"
 	"github.com/jgermade/intergate/internal/server"
 	"github.com/jgermade/intergate/internal/service"
+	"github.com/jgermade/intergate/internal/wildcard"
 )
 
 func loadConfig(path string) (*config.Config, error) {
@@ -206,7 +207,41 @@ func cmdStatus(args []string, out io.Writer) error {
 	if st.Setup {
 		fmt.Fprintln(out, "  setup:      not done yet: run `intergate setup-url` for the link")
 	}
+	if c := st.Certificate; c != nil {
+		fmt.Fprintln(out, "  tls:        "+certificateLine(c, time.Now()))
+	}
 	return nil
+}
+
+// certificateLine describes the wildcard certificate for `intergate status`.
+func certificateLine(c *wildcard.Status, now time.Time) string {
+	var line string
+	switch {
+	case !c.NotAfter.IsZero() && now.Before(c.NotAfter):
+		line = fmt.Sprintf("wildcard certificate for %s, valid until %s", strings.Join(c.Names, " and "), c.NotAfter.Local().Format("2006-01-02"))
+		if c.Provider != "" {
+			line += fmt.Sprintf(", renewed through %s from %s", c.Provider, c.RenewAt.Local().Format("2006-01-02"))
+		} else {
+			line += " and not renewed: no DNS provider"
+		}
+	case c.Provider == "":
+		return "a certificate for each host; set up a DNS provider in the dashboard (Admin → DNS) for a wildcard one"
+	default:
+		line = "a certificate for each host, until the wildcard one is issued through " + c.Provider
+	}
+	switch {
+	case c.Issuing:
+		line += "\n              issuing: " + strings.ToLower(c.Step[:1]) + c.Step[1:] + "…"
+	case c.Error != "":
+		line += "\n              failed: " + c.Error
+		if !c.NextTry.IsZero() {
+			line += fmt.Sprintf(" (trying again in %s)", c.NextTry.Sub(now).Round(time.Second))
+		}
+	}
+	if c.RecordError != "" {
+		line += "\n              wildcard record: " + c.RecordError
+	}
+	return line
 }
 
 // printSetupLink prints a link to the dashboard's setup when the server

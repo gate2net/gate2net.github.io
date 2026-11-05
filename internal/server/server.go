@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/jgermade/intergate/internal/admin"
 	"github.com/jgermade/intergate/internal/config"
+	"github.com/jgermade/intergate/internal/dns"
 	"github.com/jgermade/intergate/internal/mail"
 	"github.com/jgermade/intergate/internal/manage"
 	"github.com/jgermade/intergate/internal/names"
@@ -36,6 +38,7 @@ import (
 	"github.com/jgermade/intergate/internal/store"
 	"github.com/jgermade/intergate/internal/tunnel"
 	"github.com/jgermade/intergate/internal/web"
+	"github.com/jgermade/intergate/internal/wildcard"
 )
 
 // Options customize a Server, mostly for tests.
@@ -47,6 +50,9 @@ type Options struct {
 	MailerFor func(config.EmailConfig) mail.Sender
 	// HTTPClient is used to reach OAuth providers.
 	HTTPClient *http.Client
+	// DNSPropagated replaces the check that the zone's nameservers serve
+	// the TXT records of the wildcard certificate's challenge.
+	DNSPropagated func(ctx context.Context, name string, values []string) error
 }
 
 // Server is a configured intergate instance.
@@ -63,6 +69,10 @@ type Server struct {
 	ssh      *sshd.Server
 	web      *web.Server
 	admin    *admin.Handler
+	// wildcard keeps the wildcard certificate, when intergate gets its
+	// certificates from Let's Encrypt.
+	wildcard *wildcard.Manager
+	dnsEnv   dns.Env
 }
 
 // New opens the data directory and builds every component.
@@ -95,6 +105,12 @@ func New(cfg *config.Config, log *slog.Logger, opts Options) (*Server, error) {
 		s.store.Close()
 		return nil, fmt.Errorf("load SSH host key: %w", err)
 	}
+	if cfg.HTTP.TLS.ACME.Enabled {
+		if err := s.openWildcard(opts); err != nil {
+			s.store.Close()
+			return nil, err
+		}
+	}
 	s.manage = manage.New(cfg, s.store, s.registry, s.ports, names.NewChecker(cfg.ReservedSubdomains), log.With("component", "manage"))
 	s.ssh = sshd.New(cfg, s.store, s.registry, s.ports, s.hostKey, log.With("component", "ssh"))
 	s.web, err = web.New(web.Options{
@@ -110,13 +126,65 @@ func New(cfg *config.Config, log *slog.Logger, opts Options) (*Server, error) {
 		HTTPClient: opts.HTTPClient,
 		Version:    opts.Version,
 		HostKey:    ssh.FingerprintSHA256(s.hostKey.PublicKey()),
+		Wildcard:   s.wildcard,
+		DNSEnv:     s.dnsEnv,
 	})
 	if err != nil {
 		s.store.Close()
 		return nil, err
 	}
 	s.admin = admin.NewHandler(cfg, s.store, s.manage, s.settings, log.With("component", "admin"), opts.Version)
+	if s.wildcard != nil {
+		s.admin.Certificate = func() *wildcard.Status {
+			st := s.wildcard.Status()
+			return &st
+		}
+	}
 	return s, nil
+}
+
+// openWildcard loads the wildcard certificate and sets up its DNS
+// provider, from the configuration file or the dashboard.
+func (s *Server) openWildcard(opts Options) error {
+	cfg := s.cfg
+	propagated := opts.DNSPropagated
+	switch {
+	case propagated != nil:
+	case len(cfg.DNS.Nameservers) > 0:
+		propagated = dns.PropagationAt(cfg.DNS.Nameservers, cfg.DNS.PropagationTimeout)
+	default:
+		propagated = dns.Propagation(cfg.DNS.PropagationTimeout)
+	}
+	var err error
+	s.wildcard, err = wildcard.New(wildcard.Options{
+		Domain:       cfg.Domain(),
+		Email:        cfg.HTTP.TLS.ACME.Email,
+		DirectoryURL: cfg.HTTP.TLS.ACME.DirectoryURL,
+		Dir:          filepath.Join(cfg.DataDir, "wildcard"),
+		Log:          s.log.With("component", "wildcard"),
+		Propagated:   propagated,
+	})
+	if err != nil {
+		return fmt.Errorf("wildcard certificate: %w", err)
+	}
+	s.dnsEnv = dns.Env{Log: s.log.With("component", "dns")}
+	name, o, wildcardRecord, err := s.settings.DNSProvider()
+	if err == nil && name != "" {
+		var p dns.Provider
+		if p, err = dns.New(name, o, s.dnsEnv); err == nil {
+			s.wildcard.Configure(&wildcard.Provider{Provider: p, Name: name, WildcardRecord: wildcardRecord})
+		}
+	}
+	if err != nil {
+		// The configuration file's mistakes stop startup; the
+		// dashboard's show there, to be fixed there.
+		if s.settings.DNSSource() == settings.SourceConfig {
+			return fmt.Errorf("dns: %w", err)
+		}
+		s.log.Error("the DNS provider set up in the dashboard can't be used", "provider", name, "err", err)
+		s.wildcard.Broken(name, err)
+	}
+	return nil
 }
 
 // Close releases the database.
@@ -133,6 +201,10 @@ func (s *Server) HostKey() ssh.PublicKey { return s.hostKey.PublicKey() }
 
 // Settings returns what is set up from the dashboard.
 func (s *Server) Settings() *settings.Settings { return s.settings }
+
+// Wildcard returns what keeps the wildcard certificate, or nil when
+// intergate does not get certificates from Let's Encrypt.
+func (s *Server) Wildcard() *wildcard.Manager { return s.wildcard }
 
 // Ports returns the forwarded TCP ports.
 func (s *Server) Ports() *ports.Registry { return s.ports }
@@ -200,6 +272,17 @@ func (s *Server) Run(ctx context.Context) error {
 				Client:     &acme.Client{DirectoryURL: tlsCfg.ACME.DirectoryURL},
 			}
 			httpsSrv.TLSConfig = m.TLSConfig()
+			// The wildcard certificate, once there is one; each host's
+			// own from autocert until then, and for its challenges.
+			perHost := httpsSrv.TLSConfig.GetCertificate
+			httpsSrv.TLSConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				if !slices.Contains(hello.SupportedProtos, acme.ALPNProto) {
+					if c := s.wildcard.Certificate(hello); c != nil {
+						return c, nil
+					}
+				}
+				return perHost(hello)
+			}
 			redirect = m.HTTPHandler(redirect)
 		} else {
 			cert, err := tls.LoadX509KeyPair(tlsCfg.CertFile, tlsCfg.KeyFile)
@@ -272,6 +355,15 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	go cleanSessions(ctx, s.store, log)
+	wildcardDone := make(chan struct{})
+	if s.wildcard != nil {
+		go func() {
+			defer close(wildcardDone)
+			s.wildcard.Run(ctx)
+		}()
+	} else {
+		close(wildcardDone)
+	}
 
 	var runErr error
 	select {
@@ -284,6 +376,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	cancel()
 	<-adminDone
+	<-wildcardDone
 	s.ssh.Close()
 	s.ports.Close()
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
