@@ -604,7 +604,26 @@ func (w *Wizard) createSubdomain(c *admin.Client, d *doc) error {
 	if err != nil {
 		return err
 	}
-	sd, res, err := c.CreateSubdomain(w.ctx, admin.CreateSubdomainRequest{Name: name, Owner: owner, Access: access, Keys: keys})
+	req := admin.CreateSubdomainRequest{Name: name, Owner: owner, Access: access, Keys: keys}
+	// An existing owner's account key can open it from the start.
+	if _, accountKeys := w.account(c, owner); len(accountKeys) > 0 {
+		opts := []huh.Option[int64]{huh.NewOption("None", int64(0))}
+		for _, k := range accountKeys {
+			opts = append(opts, huh.NewOption(fmt.Sprintf("%s  %s", k.Name, k.Fingerprint), k.ID))
+		}
+		var id int64
+		if len(accountKeys) == 1 {
+			id = accountKeys[0].ID
+		}
+		if err := w.form(huh.NewGroup(huh.NewSelect[int64]().Title("SSH key from " + owner + "'s account").
+			Description("It opens the tunnel too.").Options(opts...).Value(&id))); err != nil {
+			return err
+		}
+		if id != 0 {
+			req.AccountKeys = []int64{id}
+		}
+	}
+	sd, res, err := c.CreateSubdomain(w.ctx, req)
 	if err != nil {
 		return err
 	}
@@ -629,6 +648,37 @@ func (w *Wizard) sshHint(c *admin.Client, name string) {
 	w.printf("  Connect with: %s -R %s:80:localhost:3000 %s\n\n", cmd, name, host)
 }
 
+// account finds the account with email, and its SSH keys; nil if there is
+// no such account.
+func (w *Wizard) account(c *admin.Client, email string) (*admin.User, []admin.AccountKey) {
+	users, err := c.Users(w.ctx)
+	if err != nil {
+		return nil, nil
+	}
+	for _, u := range users {
+		if strings.EqualFold(u.Email, strings.TrimSpace(email)) {
+			keys, _ := c.UserKeys(w.ctx, u.ID)
+			return &u, keys
+		}
+	}
+	return nil, nil
+}
+
+// notOn returns the account keys sd does not have yet.
+func notOn(keys []admin.AccountKey, sd *admin.SubdomainDetail) []admin.AccountKey {
+	have := map[string]bool{}
+	for _, k := range sd.KeyList {
+		have[k.Fingerprint] = true
+	}
+	var out []admin.AccountKey
+	for _, k := range keys {
+		if !have[k.Fingerprint] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 func (w *Wizard) subdomain(c *admin.Client, name string) error {
 	for {
 		sd, err := c.Subdomain(w.ctx, name)
@@ -645,14 +695,23 @@ func (w *Wizard) subdomain(c *admin.Client, name string) error {
 			w.printf("  No SSH keys: nobody can connect.\n")
 		}
 		for _, k := range sd.KeyList {
-			w.printf("  • %-20s %-12s %s  last used %s\n", k.Name, k.Type, k.Fingerprint, ago(k.LastUsedAt))
+			from := ""
+			if k.FromAccount {
+				from = "  (account key)"
+			}
+			w.printf("  • %-20s %-12s %s  last used %s%s\n", k.Name, k.Type, k.Fingerprint, ago(k.LastUsedAt), from)
 		}
 		w.printf("\n")
+		_, accountKeys := w.account(c, sd.Owner)
+		available := notOn(accountKeys, sd)
 
 		opts := []huh.Option[string]{
 			huh.NewOption("Add SSH keys", "addkeys"),
-			huh.NewOption("Change who can open it", "access"),
 		}
+		if len(available) > 0 {
+			opts = append(opts, huh.NewOption("Add a key from "+sd.Owner+"'s account", "accountkey"))
+		}
+		opts = append(opts, huh.NewOption("Change who can open it", "access"))
 		if len(sd.KeyList) > 0 {
 			opts = append(opts, huh.NewOption("Remove an SSH key", "rmkey"))
 		}
@@ -670,6 +729,8 @@ func (w *Wizard) subdomain(c *admin.Client, name string) error {
 		switch action {
 		case "addkeys":
 			err = w.addKeys(c, sd)
+		case "accountkey":
+			err = w.addAccountKey(c, sd, available)
 		case "access":
 			access := sd.Access
 			if err = w.form(huh.NewGroup(huh.NewSelect[store.Access]().Title("Who can open " + sd.Name).Options(accessOptions()...).Value(&access))); err == nil {
@@ -728,6 +789,24 @@ func (w *Wizard) addKeys(c *admin.Client, sd *admin.SubdomainDetail) error {
 	for _, p := range res.Problems {
 		w.printf("  ! %s\n", p)
 	}
+	return nil
+}
+
+func (w *Wizard) addAccountKey(c *admin.Client, sd *admin.SubdomainDetail, keys []admin.AccountKey) error {
+	opts := make([]huh.Option[int64], 0, len(keys)+1)
+	for _, k := range keys {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s  %s", k.Name, k.Fingerprint), k.ID))
+	}
+	opts = append(opts, huh.NewOption("← Cancel", int64(0)))
+	id := keys[0].ID
+	if err := w.form(huh.NewGroup(huh.NewSelect[int64]().Title("Add which key to " + sd.Name + "?").
+		Description("Removed from here too when it is removed from the account.").Options(opts...).Value(&id))); err != nil || id == 0 {
+		return err
+	}
+	if _, err := c.AddKeys(w.ctx, sd.Name, admin.KeysRequest{AccountKey: id}); err != nil {
+		return err
+	}
+	w.printf("✔ Key added.\n")
 	return nil
 }
 
@@ -810,10 +889,103 @@ func (w *Wizard) users(c *admin.Client) error {
 }
 
 func (w *Wizard) user(c *admin.Client, u admin.User) error {
-	verb := "Disable"
-	if u.Disabled {
-		verb = "Enable"
+	for {
+		keys, err := c.UserKeys(w.ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		state := ""
+		if u.Disabled {
+			state = " · disabled"
+		}
+		w.printf("\n%s  (%s · %d subdomains%s)\n", u.Email, u.Role, u.Subdomains, state)
+		if len(keys) == 0 {
+			w.printf("  No SSH keys in the account.\n")
+		}
+		for _, k := range keys {
+			on := "on no subdomain"
+			if len(k.Subdomains) > 0 {
+				on = "on " + strings.Join(k.Subdomains, ", ")
+			}
+			w.printf("  • %-20s %-12s %s  %s\n", k.Name, k.Type, k.Fingerprint, on)
+		}
+		w.printf("\n")
+
+		verb := "Disable"
+		if u.Disabled {
+			verb = "Enable"
+		}
+		opts := []huh.Option[string]{huh.NewOption("Add SSH keys to the account", "addkeys")}
+		if len(keys) > 0 {
+			opts = append(opts, huh.NewOption("Remove a key from the account", "rmkey"))
+		}
+		opts = append(opts, huh.NewOption(verb+" "+u.Email, "toggle"), huh.NewOption("← Back", "back"))
+		action := "addkeys"
+		if err := w.form(huh.NewGroup(huh.NewSelect[string]().Title(u.Email).Options(opts...).Value(&action))); err != nil || action == "back" {
+			return err
+		}
+		switch action {
+		case "addkeys":
+			err = w.addUserKeys(c, u)
+		case "rmkey":
+			err = w.removeUserKey(c, u, keys)
+		case "toggle":
+			return w.toggleUser(c, u, verb)
+		}
+		if err != nil && !aborted(err) {
+			w.problem(err)
+		}
 	}
+}
+
+func (w *Wizard) addUserKeys(c *admin.Client, u admin.User) error {
+	var keys, name string
+	err := w.form(huh.NewGroup(
+		huh.NewText().Title("SSH public keys").
+			Description("One per line: the contents of ~/.ssh/id_ed25519.pub or https://github.com/<user>.keys\n"+
+				"They can then be added to any subdomain of "+u.Email+".").
+			Validate(required("a key")).Value(&keys),
+		huh.NewInput().Title("Name").Description("Optional, for a single key. Defaults to the key comment.").Value(&name),
+	).Title("Add SSH keys to " + u.Email + "'s account"))
+	if err != nil {
+		return err
+	}
+	res, err := c.AddUserKeys(w.ctx, u.ID, admin.KeysRequest{Keys: keys, Name: name})
+	if err != nil {
+		return err
+	}
+	w.printf("✔ Added %d key(s) to the account.\n", res.Added)
+	for _, p := range res.Problems {
+		w.printf("  ! %s\n", p)
+	}
+	return nil
+}
+
+func (w *Wizard) removeUserKey(c *admin.Client, u admin.User, keys []admin.AccountKey) error {
+	opts := make([]huh.Option[int64], 0, len(keys)+1)
+	for _, k := range keys {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s  %s", k.Name, k.Fingerprint), k.ID))
+	}
+	opts = append(opts, huh.NewOption("← Cancel", int64(0)))
+	id := keys[0].ID
+	if err := w.form(huh.NewGroup(huh.NewSelect[int64]().Title("Remove which key?").
+		Description("It is removed from every subdomain it was added to, and the tunnels it opened close at once.").
+		Options(opts...).Value(&id))); err != nil || id == 0 {
+		return err
+	}
+	from, err := c.RemoveUserKey(w.ctx, u.ID, id)
+	if err != nil {
+		return err
+	}
+	if len(from) > 0 {
+		w.printf("✔ Key removed, from %s too.\n", strings.Join(from, ", "))
+	} else {
+		w.printf("✔ Key removed.\n")
+	}
+	return nil
+}
+
+func (w *Wizard) toggleUser(c *admin.Client, u admin.User, verb string) error {
 	ok := false
 	err := w.form(huh.NewGroup(huh.NewConfirm().
 		Title(fmt.Sprintf("%s %s?", verb, u.Email)).

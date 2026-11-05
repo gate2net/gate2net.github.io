@@ -71,6 +71,7 @@ type (
 	SubdomainDetail = api.SubdomainDetail
 	User            = api.User
 	KeysResult      = api.KeysResult
+	AccountKey      = api.AccountKey
 )
 
 // CreateSubdomainRequest registers a subdomain for Owner (created if new).
@@ -79,12 +80,16 @@ type CreateSubdomainRequest struct {
 	Owner  string       `json:"owner"`
 	Access store.Access `json:"access"`
 	Keys   string       `json:"keys"`
+	// AccountKeys are keys of Owner's account to add.
+	AccountKeys []int64 `json:"account_keys,omitempty"`
 }
 
 // KeysRequest adds keys in authorized_keys format.
 type KeysRequest struct {
 	Keys string `json:"keys"`
 	Name string `json:"name"`
+	// AccountKey, on a subdomain, adds a key of its owner's account instead.
+	AccountKey int64 `json:"account_key,omitempty"`
 }
 
 const actor = "local admin"
@@ -123,6 +128,9 @@ func NewHandler(cfg *config.Config, st *store.Store, svc *manage.Service, set *s
 	h.mux.HandleFunc("POST /v1/users", h.createUser)
 	h.mux.HandleFunc("POST /v1/users/{id}/disable", h.setDisabled(true))
 	h.mux.HandleFunc("POST /v1/users/{id}/enable", h.setDisabled(false))
+	h.mux.HandleFunc("GET /v1/users/{id}/keys", h.userKeys)
+	h.mux.HandleFunc("POST /v1/users/{id}/keys", h.addUserKeys)
+	h.mux.HandleFunc("DELETE /v1/users/{id}/keys/{key}", h.removeUserKey)
 	return h
 }
 
@@ -288,6 +296,11 @@ func (h *Handler) createSubdomain(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
+	result := KeysResult{Added: res.Added, Problems: res.Problems}
+	if err := h.attach(r.Context(), d, owner, req.AccountKeys, &result); err != nil {
+		h.fail(w, err)
+		return
+	}
 	d, err = h.store.SubdomainByName(r.Context(), d.Name)
 	if err != nil {
 		h.fail(w, err)
@@ -296,7 +309,24 @@ func (h *Handler) createSubdomain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, struct {
 		Subdomain Subdomain  `json:"subdomain"`
 		Keys      KeysResult `json:"keys"`
-	}{h.subdomain(d), KeysResult{Added: res.Added, Problems: res.Problems}})
+	}{h.subdomain(d), result})
+}
+
+// attach adds keys of owner's account to d, and says what could not be.
+func (h *Handler) attach(ctx context.Context, d *store.Subdomain, owner *store.User, ids []int64, res *KeysResult) error {
+	for _, id := range ids {
+		_, err := h.manage.AttachUserKey(ctx, d, owner, id, actor)
+		var me *manage.Error
+		switch {
+		case err == nil:
+			res.Added++
+		case errors.As(err, &me):
+			res.Problems = append(res.Problems, me.Error())
+		default:
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *Handler) setAccess(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +356,19 @@ func (h *Handler) addKeys(w http.ResponseWriter, r *http.Request) {
 	var req KeysRequest
 	if err := decode(r, &req); err != nil {
 		h.fail(w, err)
+		return
+	}
+	if req.AccountKey != 0 {
+		owner, err := h.store.UserByID(r.Context(), d.UserID)
+		if err != nil {
+			h.fail(w, err)
+			return
+		}
+		if _, err := h.manage.AttachUserKey(r.Context(), d, owner, req.AccountKey, actor); err != nil {
+			h.fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, KeysResult{Added: 1})
 		return
 	}
 	res, err := h.manage.AddKeys(r.Context(), d, req.Keys, req.Name, actor)
@@ -407,6 +450,72 @@ func (h *Handler) setDisabled(disabled bool) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+func (h *Handler) loadUser(w http.ResponseWriter, r *http.Request) *store.User {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	u, err := h.store.UserByID(r.Context(), id)
+	if err != nil {
+		h.fail(w, err)
+		return nil
+	}
+	return u
+}
+
+func (h *Handler) userKeys(w http.ResponseWriter, r *http.Request) {
+	u := h.loadUser(w, r)
+	if u == nil {
+		return
+	}
+	keys, err := h.store.UserKeys(r.Context(), u.ID)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	attached, err := h.store.UserKeyAttachments(r.Context(), u.ID)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, api.NewAccountKeys(keys, attached))
+}
+
+func (h *Handler) addUserKeys(w http.ResponseWriter, r *http.Request) {
+	u := h.loadUser(w, r)
+	if u == nil {
+		return
+	}
+	var req KeysRequest
+	if err := decode(r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	res, err := h.manage.AddUserKeys(r.Context(), u, req.Keys, req.Name, actor)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, KeysResult{Added: res.Added, Problems: res.Problems})
+}
+
+// removeUserKey removes a key from an account and from every subdomain it
+// was added to, and answers which those were.
+func (h *Handler) removeUserKey(w http.ResponseWriter, r *http.Request) {
+	u := h.loadUser(w, r)
+	if u == nil {
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("key"), 10, 64)
+	attached, err := h.manage.RemoveUserKey(r.Context(), u, id, actor)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	from := []string{}
+	for _, a := range attached {
+		from = append(from, a.Subdomain)
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"removed_from": from})
 }
 
 // setupURL answers a new link to the dashboard's setup, which replaces the

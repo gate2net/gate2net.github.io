@@ -12,6 +12,7 @@
   const Icon = await import("@theme/components/icon.html")
   const OtpInput = await import("@theme/components/otp-input.html")
   const Segmented = await import("@theme/components/segmented.html")
+  const Select = await import("@theme/components/select.html")
   const WHERE = [{ value: "server", label: "Server" }, { value: "docker", label: "Docker" }, { value: "kubernetes", label: "Kubernetes" }]
 
   document.title = "Set up · intergate"
@@ -23,6 +24,11 @@
 
   // Email delivery: what was saved before, or the usual.
   const PORTS = { starttls: "587", tls: "465", none: "25" }
+  const TLS_ITEMS = [
+    { value: "starttls", label: "STARTTLS", hint: "Usually port 587", icon: "lock" },
+    { value: "tls", label: "TLS", hint: "Usually port 465", icon: "lock" },
+    { value: "none", label: "None", hint: "A relay on this server only", icon: "warning" },
+  ]
   let host = ""
   let port = PORTS.starttls
   let tls = "starttls"
@@ -40,9 +46,10 @@
     savedPassword = smtp.password
   }
   fill(setup.smtp)
-  // The port follows the encryption, unless it was changed.
+  // The port follows the encryption, unless it was changed (:model has
+  // already set tls to the new value).
   const setTLS = value => {
-    if (port === PORTS[tls]) port = PORTS[value]
+    if (Object.values(PORTS).includes(port)) port = PORTS[value]
     tls = value
   }
 
@@ -178,11 +185,7 @@
         </label>
         <div class="form-grid pair">
           <label>Encryption
-            <select class="field" name="tls" @change="setTLS($event.target.value)">
-              <option value="starttls" :selected="tls === 'starttls'">STARTTLS</option>
-              <option value="tls" :selected="tls === 'tls'">TLS</option>
-              <option value="none" :selected="tls === 'none'">None (local relay)</option>
-            </select>
+            <Select name="tls" :model="tls" :items="TLS_ITEMS" @change="setTLS($event.detail)" />
           </label>
           <label>Port
             <input name="port" required inputmode="numeric" pattern="[0-9]{1,5}" :value="port" @input="port = $event.target.value">

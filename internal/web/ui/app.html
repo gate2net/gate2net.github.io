@@ -45,8 +45,7 @@
       localStorage.setItem(DISMISSED, "1")
     } catch {}
   }
-  $: dnsBanner = !dismissed && !app.setup && app.user && app.user.role === "owner" &&
-    app.wildcard && !app.wildcard.provider && !app.wildcard.ready
+  $: dnsBanner = !dismissed && !app.setup && app.user?.role === "owner" && app.wildcard && !app.wildcard.provider && !app.wildcard.ready
 </script>
 
 <header class="topbar">

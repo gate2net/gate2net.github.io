@@ -17,7 +17,8 @@
   // where browsers have one (`appearance: base-select`, its `<button>` with
   // `<selectedcontent>`); elsewhere the browser's own, with the hint after a
   // dot. Icons are drawn here, from `icons.js`: an option holds text and
-  // inline SVG, which `<selectedcontent>` copies, not components.
+  // inline SVG, which `<selectedcontent>` copies, not components. The open
+  // list floats, white in either tone: its options are light islands.
   const { ICONS } = await import("@theme/icons.js")
 
   const flag = v => v === "" || v === true || v === "true"
@@ -35,7 +36,7 @@
 
 <select class="select" :name="name || null" :aria-label="label || null" :disabled="isDisabled" @change="choose($event.target.value)">
   <button type="button"><selectedcontent></selectedcontent></button>
-  <option :each="option in options" :key="String(option.value)" :value="String(option.value)"
+  <option :each="option in options" :key="String(option.value)" :value="String(option.value)" data-tone="light"
           :selected="String(option.value) === String(model)" :disabled="!!option.disabled">
     <svg :if="option.icon" class="icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="ICONS[option.icon] || ''" /></svg>
     <span class="text">
@@ -69,7 +70,6 @@
   .select:disabled { opacity: .5; cursor: default; }
 
   @supports (appearance: base-select) {
-    .select, .select::picker(select) { appearance: base-select; }
     .select {
       display: flex;
       align-items: center;
@@ -96,15 +96,6 @@
     /* Apart: a browser without :open drops the whole rule. */
     .select:open { border-color: var(--ig-accent); box-shadow: var(--ig-ring); background: var(--ig-field-focus); }
     .select:open::picker-icon { rotate: 180deg; }
-    .select::picker(select) {
-      margin-top: .25rem;
-      padding: .25rem;
-      border: var(--ig-hairline) solid var(--ig-line);
-      border-radius: var(--ig-radius-md);
-      background: var(--ig-material-hud);
-      box-shadow: var(--ig-shadow-pop);
-      color: var(--ig-fg);
-    }
     option {
       display: flex;
       align-items: center;
@@ -114,6 +105,7 @@
       border-radius: var(--ig-radius-sm);
       font-size: var(--ig-text-base);
       line-height: 1.25rem;
+      color: var(--ig-fg);
       cursor: pointer;
     }
     option:hover, option:focus-visible { background: var(--ig-fill); outline: none; }
@@ -142,4 +134,23 @@
   .text { display: flex; flex-direction: column; min-width: 0; }
   .label { font-weight: var(--ig-weight-medium); white-space: nowrap; }
   .hint { color: var(--ig-fg-muted); font-size: var(--ig-text-sm); }
+</style>
+
+<style>
+  /* Not scoped: the browser writes ::picker(select) back as ::picker, which
+     drops the rule when jq79 scopes it. */
+  @supports (appearance: base-select) {
+    select.select, select.select::picker(select) { appearance: base-select; }
+    select.select::picker(select) {
+      margin-top: .25rem;
+      padding: .25rem;
+      border: var(--ig-hairline) solid var(--ig-line);
+      border-radius: var(--ig-radius-md);
+      background: var(--ig-material-hud);
+      -webkit-backdrop-filter: var(--ig-blur);
+      backdrop-filter: var(--ig-blur);
+      box-shadow: var(--ig-shadow-pop);
+      color: var(--ig-fg);
+    }
+  }
 </style>

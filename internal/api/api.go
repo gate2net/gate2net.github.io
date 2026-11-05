@@ -94,6 +94,33 @@ func NewKeys(keys []*store.Key) []Key {
 	return out
 }
 
+// AccountKey is an SSH key of an account, without the key itself.
+type AccountKey struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Fingerprint string    `json:"fingerprint"`
+	CreatedAt   time.Time `json:"created_at"`
+	// Subdomains are those it was added to.
+	Subdomains []string `json:"subdomains"`
+}
+
+// NewAccountKeys describes an account's keys and the subdomains each was
+// added to; never nil, so it encodes as [].
+func NewAccountKeys(keys []*store.UserKey, attached []store.Attachment) []AccountKey {
+	out := make([]AccountKey, 0, len(keys))
+	for _, k := range keys {
+		v := AccountKey{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, Subdomains: []string{}}
+		for _, a := range attached {
+			if a.UserKeyID == k.ID {
+				v.Subdomains = append(v.Subdomains, a.Subdomain)
+			}
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
 // SubdomainDetail is a subdomain with its keys and ports.
 type SubdomainDetail struct {
 	Subdomain

@@ -56,6 +56,7 @@
     load()
   }
   $: keysFull = keys.length >= keysLimit
+  const short = fp => fp.replace(/^SHA256:/, "").slice(0, 12) + "…"
   let renamingKey = 0
   let newKeyName = ""
   const startRenameKey = key => {
@@ -211,7 +212,7 @@
   <p class="muted intro">Add your keys once, then pick them on any of your subdomains, in its SSH keys tab. A key removed here is removed from every subdomain, and closes the tunnels it opened.</p>
   <div :if="keys.length" class="table-wrap">
     <table class="table tiles">
-      <thead><tr><th>Name</th><th>Fingerprint</th><th>Subdomains</th><th class="hide-narrow">Added</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th class="hide-narrow">Fingerprint</th><th>Subdomains</th><th class="hide-narrow">Added</th><th></th></tr></thead>
       <tbody>
         <tr :each="key in keys" :key="key.id">
           <td>
@@ -222,9 +223,9 @@
               <button type="button" class="link" @click="renamingKey = 0">Cancel</button>
             </form>
             <span :else>{{ key.name }}</span>
-            <div class="muted small">{{ key.type }}</div>
+            <div class="muted small">{{ key.type }}<span class="hide-wide"> · {{ short(key.fingerprint) }}</span></div>
           </td>
-          <td><code class="small">{{ key.fingerprint }}</code></td>
+          <td class="hide-narrow"><code class="small">{{ key.fingerprint }}</code></td>
           <td>
             <span :if="!key.subdomains.length" class="muted small">None yet</span>
             <span :else class="key-subdomains">

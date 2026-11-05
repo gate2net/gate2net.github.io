@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/jgermade/intergate/internal/api"
 	"github.com/jgermade/intergate/internal/manage"
@@ -15,18 +14,7 @@ import (
 // they manage, picking them from a list. A subdomain's copy goes with the
 // account's: removed from the account, a key opens nothing anywhere.
 
-// accountKey describes a key of the account, without the key itself.
-type accountKey struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	Fingerprint string    `json:"fingerprint"`
-	CreatedAt   time.Time `json:"created_at"`
-	// Subdomains are those it was added to.
-	Subdomains []string `json:"subdomains"`
-}
-
-func (s *Server) accountKeys(r *http.Request) ([]accountKey, error) {
+func (s *Server) accountKeys(r *http.Request) ([]api.AccountKey, error) {
 	u := currentAuth(r).User
 	keys, err := s.store.UserKeys(r.Context(), u.ID)
 	if err != nil {
@@ -36,17 +24,7 @@ func (s *Server) accountKeys(r *http.Request) ([]accountKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]accountKey, 0, len(keys))
-	for _, k := range keys {
-		v := accountKey{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, Subdomains: []string{}}
-		for _, a := range attached {
-			if a.UserKeyID == k.ID {
-				v.Subdomains = append(v.Subdomains, a.Subdomain)
-			}
-		}
-		out = append(out, v)
-	}
-	return out, nil
+	return api.NewAccountKeys(keys, attached), nil
 }
 
 func (s *Server) handleAccountKeys(w http.ResponseWriter, r *http.Request) {
