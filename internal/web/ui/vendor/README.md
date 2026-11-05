@@ -1,9 +1,9 @@
 # Vendored
 
-`jq79.js` is [jq79](https://github.com/jgermade/jq79) 0.7.7 (ISC), the
+`jq79.js` is [jq79](https://github.com/jgermade/jq79) 0.7.9 (ISC), the
 `dist/jq79.js` file of the npm package, unmodified:
 
-    sha256 ff5d5eb3114c89c61b1b5b00ea9eabba43289f5e132c30151ae356bec8e1cb06
+    sha256 55ac1501d88b74b0a1039b90be9921047498ccb8de0c1b30c6a1ec6cba222d61
 
 To upgrade, replace the file with another release's `dist/jq79.js` and update
 the version and checksum here.

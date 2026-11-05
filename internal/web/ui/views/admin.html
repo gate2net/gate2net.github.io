@@ -2,24 +2,45 @@
   // For administrators: every subdomain with its tunnel, every account, the
   // SMTP relay and the DNS provider of the wildcard certificate, which
   // owners can change.
-  const { app, query, toast } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { ago, date, plural } = await import("@ui/lib/format.js")
-  const StatusBadge = await import("@ui/components/status-badge.html")
-  const AccessBadge = await import("@ui/components/access-badge.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Badge = await import("@theme/components/badge.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const ChoiceCards = await import("@theme/components/choice-cards.html")
-  const Facts = await import("@theme/components/facts.html")
-  const Icon = await import("@theme/components/icon.html")
-  const Modal = await import("@theme/components/modal.html")
-  const Select = await import("@theme/components/select.html")
-  const FilePicker = await import("@theme/components/file-picker.html")
-  const OtpInput = await import("@theme/components/otp-input.html")
-  const Switch = await import("@theme/components/switch.html")
-  const Tabs = await import("@theme/components/tabs.html")
+  const [
+    { app, query, toast },
+    { api },
+    { ago, date, plural },
+    StatusBadge,
+    AccessBadge,
+    Alert,
+    Badge,
+    Button,
+    Card,
+    ChoiceCards,
+    Facts,
+    Icon,
+    Modal,
+    Select,
+    FilePicker,
+    OtpInput,
+    Switch,
+    Tabs,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/format.js",
+    "@ui/components/status-badge.html",
+    "@ui/components/access-badge.html",
+    "@theme/components/alert.html",
+    "@theme/components/badge.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/choice-cards.html",
+    "@theme/components/facts.html",
+    "@theme/components/icon.html",
+    "@theme/components/modal.html",
+    "@theme/components/select.html",
+    "@theme/components/file-picker.html",
+    "@theme/components/otp-input.html",
+    "@theme/components/switch.html",
+    "@theme/components/tabs.html",
+  ])
 
   document.title = "Admin · intergate"
 

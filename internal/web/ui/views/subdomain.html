@@ -1,21 +1,39 @@
 <script :setup="{ name }">
   // One subdomain, in tabs: its connection, who can open it and its ports;
   // its SSH keys; and the danger zone, to rename or delete it.
-  const { app, go, toast } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { ago, bytes } = await import("@ui/lib/format.js")
-  const AccessOptions = await import("@ui/components/access-options.html")
-  const StatusBadge = await import("@ui/components/status-badge.html")
-  const CopyText = await import("@ui/components/copy-text.html")
-  const TcpPorts = await import("@ui/components/tcp-ports.html")
-  const KeysForm = await import("@ui/components/keys-form.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const Facts = await import("@theme/components/facts.html")
-  const Modal = await import("@theme/components/modal.html")
-  const Tabs = await import("@theme/components/tabs.html")
-  const Badge = await import("@theme/components/badge.html")
+  const [
+    { app, go, toast },
+    { api },
+    { ago, bytes },
+    AccessOptions,
+    StatusBadge,
+    CopyText,
+    TcpPorts,
+    KeysForm,
+    Alert,
+    Button,
+    Card,
+    Facts,
+    Modal,
+    Tabs,
+    Badge,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/format.js",
+    "@ui/components/access-options.html",
+    "@ui/components/status-badge.html",
+    "@ui/components/copy-text.html",
+    "@ui/components/tcp-ports.html",
+    "@ui/components/keys-form.html",
+    "@theme/components/alert.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/facts.html",
+    "@theme/components/modal.html",
+    "@theme/components/tabs.html",
+    "@theme/components/badge.html",
+  ])
 
   let sub = null
   let missing = false

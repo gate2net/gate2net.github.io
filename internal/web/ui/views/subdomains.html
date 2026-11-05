@@ -1,17 +1,32 @@
 <script :setup>
   // The signed-in user's subdomains, and the form that registers one.
-  const { app } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { ago } = await import("@ui/lib/format.js")
-  const RegisterForm = await import("@ui/components/register-form.html")
-  const StatusBadge = await import("@ui/components/status-badge.html")
-  const AccessBadge = await import("@ui/components/access-badge.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Badge = await import("@theme/components/badge.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const Icon = await import("@theme/components/icon.html")
-  const Modal = await import("@theme/components/modal.html")
+  const [
+    { app },
+    { api },
+    { ago },
+    RegisterForm,
+    StatusBadge,
+    AccessBadge,
+    Alert,
+    Badge,
+    Button,
+    Card,
+    Icon,
+    Modal,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/format.js",
+    "@ui/components/register-form.html",
+    "@ui/components/status-badge.html",
+    "@ui/components/access-badge.html",
+    "@theme/components/alert.html",
+    "@theme/components/badge.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/icon.html",
+    "@theme/components/modal.html",
+  ])
 
   document.title = "Subdomains · intergate"
 

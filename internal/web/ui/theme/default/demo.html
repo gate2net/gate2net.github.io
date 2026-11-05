@@ -6,23 +6,43 @@
   //
   // The page imports the theme and nothing of the app's: no store, no
   // `app.css`. What it shows is the theme alone.
-  const Icon = await import("@theme/components/icon.html")
-  const Button = await import("@theme/components/button.html")
-  const Badge = await import("@theme/components/badge.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Card = await import("@theme/components/card.html")
-  const Facts = await import("@theme/components/facts.html")
-  const Switch = await import("@theme/components/switch.html")
-  const Segmented = await import("@theme/components/segmented.html")
-  const ChoiceCards = await import("@theme/components/choice-cards.html")
-  const OtpInput = await import("@theme/components/otp-input.html")
-  const Select = await import("@theme/components/select.html")
-  const FilePicker = await import("@theme/components/file-picker.html")
-  const Tabs = await import("@theme/components/tabs.html")
-  const Modal = await import("@theme/components/modal.html")
-  const { ICONS } = await import("@theme/icons.js")
-  const Inspector = await import("@theme/demo/inspector.html")
-  const { highlight } = await import("@theme/demo/highlight.js")
+  const [
+    Icon,
+    Button,
+    Badge,
+    Alert,
+    Card,
+    Facts,
+    Switch,
+    Segmented,
+    ChoiceCards,
+    OtpInput,
+    Select,
+    FilePicker,
+    Tabs,
+    Modal,
+    { ICONS },
+    Inspector,
+    { highlight },
+  ] = await C79.importAll([
+    "@theme/components/icon.html",
+    "@theme/components/button.html",
+    "@theme/components/badge.html",
+    "@theme/components/alert.html",
+    "@theme/components/card.html",
+    "@theme/components/facts.html",
+    "@theme/components/switch.html",
+    "@theme/components/segmented.html",
+    "@theme/components/choice-cards.html",
+    "@theme/components/otp-input.html",
+    "@theme/components/select.html",
+    "@theme/components/file-picker.html",
+    "@theme/components/tabs.html",
+    "@theme/components/modal.html",
+    "@theme/icons.js",
+    "@theme/demo/inspector.html",
+    "@theme/demo/highlight.js",
+  ])
 
   document.title = "Default theme · intergate"
 

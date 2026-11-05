@@ -2,13 +2,23 @@
   // Signing in: with a passkey, with a code sent by email, or with an OAuth
   // provider — whichever the server has on. Afterwards the page loads again
   // where the visitor was going, as a new session.
-  const { app, query } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { supported, signIn, autofillAvailable, problem } = await import("@ui/lib/passkeys.js")
-  const Alert = await import("@theme/components/alert.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const OtpInput = await import("@theme/components/otp-input.html")
+  const [
+    { app, query },
+    { api },
+    { supported, signIn, autofillAvailable, problem },
+    Alert,
+    Button,
+    Card,
+    OtpInput,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/passkeys.js",
+    "@theme/components/alert.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/otp-input.html",
+  ])
 
   document.title = "Sign in · intergate"
 

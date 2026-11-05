@@ -3,16 +3,29 @@
   // in: email delivery (SMTP), then the owner, who confirms their address
   // with a code and is signed in. Only the browser that opened the
   // one-time link from `intergate setup-url` gets the forms.
-  const { app, query } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const CopyText = await import("@ui/components/copy-text.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const Icon = await import("@theme/components/icon.html")
-  const OtpInput = await import("@theme/components/otp-input.html")
-  const Segmented = await import("@theme/components/segmented.html")
-  const Select = await import("@theme/components/select.html")
+  const [
+    { app, query },
+    { api },
+    CopyText,
+    Alert,
+    Button,
+    Card,
+    Icon,
+    OtpInput,
+    Segmented,
+    Select,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/components/copy-text.html",
+    "@theme/components/alert.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/icon.html",
+    "@theme/components/otp-input.html",
+    "@theme/components/segmented.html",
+    "@theme/components/select.html",
+  ])
   const WHERE = [{ value: "server", label: "Server" }, { value: "docker", label: "Docker" }, { value: "kubernetes", label: "Kubernetes" }]
 
   document.title = "Set up · intergate"

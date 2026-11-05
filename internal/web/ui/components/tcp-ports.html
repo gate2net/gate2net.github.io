@@ -5,18 +5,33 @@
   // with a `changed` event.
   //
   //   <TcpPorts :sub="sub" @changed="load()" />
-  const { app, toast } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { ago, bytes, plural } = await import("@ui/lib/format.js")
-  const CopyText = await import("@ui/components/copy-text.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Select = await import("@theme/components/select.html")
-  const Badge = await import("@theme/components/badge.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const ChoiceCards = await import("@theme/components/choice-cards.html")
-  const Modal = await import("@theme/components/modal.html")
-  const Segmented = await import("@theme/components/segmented.html")
+  const [
+    { app, toast },
+    { api },
+    { ago, bytes, plural },
+    CopyText,
+    Alert,
+    Select,
+    Badge,
+    Button,
+    Card,
+    ChoiceCards,
+    Modal,
+    Segmented,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/format.js",
+    "@ui/components/copy-text.html",
+    "@theme/components/alert.html",
+    "@theme/components/select.html",
+    "@theme/components/badge.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/choice-cards.html",
+    "@theme/components/modal.html",
+    "@theme/components/segmented.html",
+  ])
 
   // Who can connect to a port: the addresses in its allow list, or anyone.
   const WHO = [

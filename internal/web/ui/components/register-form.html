@@ -2,12 +2,21 @@
   // The form that registers a subdomain, starting public, and opens its
   // page once registered. With `:cancel`, it has a Cancel button that
   // emits `cancel`, for a dialog.
-  const { app, go, toast } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const AccessOptions = await import("@ui/components/access-options.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Button = await import("@theme/components/button.html")
-  const Select = await import("@theme/components/select.html")
+  const [
+    { app, go, toast },
+    { api },
+    AccessOptions,
+    Alert,
+    Button,
+    Select,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/components/access-options.html",
+    "@theme/components/alert.html",
+    "@theme/components/button.html",
+    "@theme/components/select.html",
+  ])
 
   // A key of the account can open it from the start.
   let accountKeys = []

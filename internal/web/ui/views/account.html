@@ -3,19 +3,35 @@
   // add once and then to any of their subdomains, and their passkeys
   // (`?tab=keys` or `passkeys` opens one). Right after a first sign-in
   // (`?welcome=1`) it suggests adding a passkey before going on.
-  const { app, go, query, toast } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { ago, date } = await import("@ui/lib/format.js")
-  const { supported, register, problem } = await import("@ui/lib/passkeys.js")
-  const Alert = await import("@theme/components/alert.html")
-  const Badge = await import("@theme/components/badge.html")
-  const Button = await import("@theme/components/button.html")
-  const Card = await import("@theme/components/card.html")
-  const Facts = await import("@theme/components/facts.html")
-  const Icon = await import("@theme/components/icon.html")
-  const Modal = await import("@theme/components/modal.html")
-  const Tabs = await import("@theme/components/tabs.html")
-  const KeysForm = await import("@ui/components/keys-form.html")
+  const [
+    { app, go, query, toast },
+    { api },
+    { ago, date },
+    { supported, register, problem },
+    Alert,
+    Badge,
+    Button,
+    Card,
+    Facts,
+    Icon,
+    Modal,
+    Tabs,
+    KeysForm,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/format.js",
+    "@ui/lib/passkeys.js",
+    "@theme/components/alert.html",
+    "@theme/components/badge.html",
+    "@theme/components/button.html",
+    "@theme/components/card.html",
+    "@theme/components/facts.html",
+    "@theme/components/icon.html",
+    "@theme/components/modal.html",
+    "@theme/components/tabs.html",
+    "@ui/components/keys-form.html",
+  ])
 
   document.title = "Account · intergate"
 

@@ -1,17 +1,31 @@
 <script :setup>
   // The page: the top bar, and the view the path names. Signed out, every
   // path shows the sign-in form, which comes back to that path.
-  const { app, route, go } = await import("@ui/lib/store.js")
-  const Setup = await import("@ui/views/setup.html")
-  const Login = await import("@ui/views/login.html")
-  const Subdomains = await import("@ui/views/subdomains.html")
-  const Subdomain = await import("@ui/views/subdomain.html")
-  const Account = await import("@ui/views/account.html")
-  const Admin = await import("@ui/views/admin.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Card = await import("@theme/components/card.html")
-  const Button = await import("@theme/components/button.html")
-  const Icon = await import("@theme/components/icon.html")
+  const [
+    { app, route, go },
+    Setup,
+    Login,
+    Subdomains,
+    Subdomain,
+    Account,
+    Admin,
+    Alert,
+    Card,
+    Button,
+    Icon,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/views/setup.html",
+    "@ui/views/login.html",
+    "@ui/views/subdomains.html",
+    "@ui/views/subdomain.html",
+    "@ui/views/account.html",
+    "@ui/views/admin.html",
+    "@theme/components/alert.html",
+    "@theme/components/card.html",
+    "@theme/components/button.html",
+    "@theme/components/icon.html",
+  ])
   // What the pages import as they open, fetched now (and kept, by jq79's
   // cache) so that changing page never waits on code, only on data.
   import("@ui/lib/format.js")

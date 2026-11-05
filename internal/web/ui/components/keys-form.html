@@ -4,12 +4,21 @@
   // account (`:account`). On the page while there are none; in a dialog
   // once there is one. With `:cancel`, it has a Cancel button that emits
   // `cancel`, for the dialog.
-  const { toast } = await import("@ui/lib/store.js")
-  const { api } = await import("@ui/lib/api.js")
-  const { plural } = await import("@ui/lib/format.js")
-  const Alert = await import("@theme/components/alert.html")
-  const Button = await import("@theme/components/button.html")
-  const Select = await import("@theme/components/select.html")
+  const [
+    { toast },
+    { api },
+    { plural },
+    Alert,
+    Button,
+    Select,
+  ] = await C79.importAll([
+    "@ui/lib/store.js",
+    "@ui/lib/api.js",
+    "@ui/lib/format.js",
+    "@theme/components/alert.html",
+    "@theme/components/button.html",
+    "@theme/components/select.html",
+  ])
 
   const flag = v => v === "" || v === true || v === "true"
   const toAccount = flag(account)

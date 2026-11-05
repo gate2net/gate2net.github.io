@@ -17,19 +17,21 @@
   // theme's.
   //
   //   <Inspector :open="inspecting" :name="component" @close="inspecting = false" />
-  // jq79 by the name the page's import map gives it: the same module that
-  // drew the page, wherever the page is served.
-  const { C79 } = await import("jq79")
-  const Modal = await import("@theme/components/modal.html")
-  const Tabs = await import("@theme/components/tabs.html")
-  const Button = await import("@theme/components/button.html")
-  const Alert = await import("@theme/components/alert.html")
-  const Segmented = await import("@theme/components/segmented.html")
-  const CodeEditor = await import("@theme/demo/code-editor.html")
-  const { USAGE, TITLES } = await import("@theme/demo/usage.js")
-  const { unifiedDiff } = await import("@theme/demo/diff.js")
-  const { THEME } = await import("@theme/demo/paths.js")
-  const { parseTokens, writeTokens, declare, usable, pickable, repick } = await import("@theme/demo/tokens.js")
+  const [
+    Modal, Tabs, Button, Alert, Segmented, CodeEditor,
+    { USAGE, TITLES }, { unifiedDiff }, { THEME }, { parseTokens, writeTokens, declare, usable, pickable, repick },
+  ] = await C79.importAll([
+    "@theme/components/modal.html",
+    "@theme/components/tabs.html",
+    "@theme/components/button.html",
+    "@theme/components/alert.html",
+    "@theme/components/segmented.html",
+    "@theme/demo/code-editor.html",
+    "@theme/demo/usage.js",
+    "@theme/demo/diff.js",
+    "@theme/demo/paths.js",
+    "@theme/demo/tokens.js",
+  ])
 
   // Where the theme is in the repository, for a patch.
   const REPO = "internal/web/ui/theme/default/"
