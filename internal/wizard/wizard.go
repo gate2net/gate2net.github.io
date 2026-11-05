@@ -401,6 +401,10 @@ func (w *Wizard) saved(s *settings, isNew bool) {
 	w.printf("\nNext steps:\n")
 	if s.TLSMode != tlsNone {
 		w.printf("  1. In DNS, point %s and *.%s to this server.\n", host, host)
+		if s.TLSMode == tlsACME {
+			w.printf("     intergate gets a certificate for each subdomain. For one wildcard certificate instead,\n" +
+				"     set up your DNS provider (Cloudflare, Google Cloud DNS, Route 53…) in the dashboard: Admin → DNS.\n")
+		}
 	} else {
 		w.printf("  1. Browsers resolve *.localhost on their own; for other names, point %s and *.%s to this machine.\n", host, host)
 	}

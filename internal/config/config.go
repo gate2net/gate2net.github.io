@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/mail"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jgermade/intergate/internal/dns"
 )
 
 // Config is the top-level configuration.
@@ -34,12 +37,67 @@ type Config struct {
 	Admin  AdminConfig `yaml:"admin"`
 	Limits Limits      `yaml:"limits"`
 	TCP    TCPConfig   `yaml:"tcp"`
+	DNS    DNSConfig   `yaml:"dns"`
 
 	// ReservedSubdomains are names nobody can register, on top of the
 	// built-in list (www, admin, api, ...).
 	ReservedSubdomains []string `yaml:"reserved_subdomains"`
 
+	// TrustedProxies are the addresses (IPs or CIDR ranges) the proxies and
+	// load balancers in front of intergate connect from. Only they may tell
+	// it a client's address: with X-Forwarded-For (http.trust_proxy_headers)
+	// or a PROXY protocol header (ssh.proxy_protocol,
+	// http.tls.proxy_protocol). Defaults to loopback and private networks.
+	TrustedProxies []string `yaml:"trusted_proxies"`
+
 	publicURL *url.URL
+	trusted   []netip.Prefix
+}
+
+// DefaultTrustedProxies are loopback and private networks: where a proxy on
+// the same machine, a container network or a cluster's pods connect from.
+var DefaultTrustedProxies = []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}
+
+// TrustedProxy reports whether a connection from ip may tell intergate a
+// client's address.
+func (c *Config) TrustedProxy(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	for _, p := range c.trusted {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// TrustedProxyRanges returns the trusted proxies as CIDR ranges.
+func (c *Config) TrustedProxyRanges() []string {
+	out := make([]string, len(c.trusted))
+	for i, p := range c.trusted {
+		out[i] = p.String()
+	}
+	return out
+}
+
+func (c *Config) parseTrustedProxies() error {
+	list := c.TrustedProxies
+	if len(list) == 0 {
+		list = DefaultTrustedProxies
+	}
+	c.trusted = nil
+	for _, s := range list {
+		s = strings.TrimSpace(s)
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			ip, ierr := netip.ParseAddr(s)
+			if ierr != nil {
+				return fmt.Errorf("trusted_proxies: %q is not an IP address or a CIDR range like 10.0.0.0/8", s)
+			}
+			p = netip.PrefixFrom(ip.Unmap(), ip.Unmap().BitLen())
+		}
+		c.trusted = append(c.trusted, p.Masked())
+	}
+	return nil
 }
 
 type HTTPConfig struct {
@@ -47,8 +105,9 @@ type HTTPConfig struct {
 	// redirects to HTTPS (and answers ACME HTTP-01 challenges).
 	Listen string    `yaml:"listen"`
 	TLS    TLSConfig `yaml:"tls"`
-	// TrustProxyHeaders keeps incoming X-Forwarded-For headers. Enable it
-	// only when intergate runs behind a reverse proxy you control.
+	// TrustProxyHeaders keeps incoming X-Forwarded-For headers, from the
+	// trusted_proxies only. Enable it when intergate runs behind a reverse
+	// proxy you control.
 	TrustProxyHeaders bool `yaml:"trust_proxy_headers"`
 }
 
@@ -59,6 +118,10 @@ type TLSConfig struct {
 	CertFile string     `yaml:"cert_file"`
 	KeyFile  string     `yaml:"key_file"`
 	ACME     ACMEConfig `yaml:"acme"`
+	// ProxyProtocol expects a PROXY protocol header (v1 or v2) on every
+	// HTTPS connection, from a load balancer or a proxy that passes TLS
+	// through (Traefik's passthrough), to learn client addresses.
+	ProxyProtocol bool `yaml:"proxy_protocol"`
 }
 
 // Enabled reports whether intergate terminates TLS itself.
@@ -71,6 +134,29 @@ type ACMEConfig struct {
 	Email        string `yaml:"email"`
 	DirectoryURL string `yaml:"directory_url"`
 }
+
+// DNSConfig is a DNS provider for the zone of the dashboard's domain:
+// intergate gets one Let's Encrypt certificate for the domain and all its
+// subdomains through it (with ACME's DNS-01 challenge), instead of one per
+// subdomain. Without it, an owner can set one up from the dashboard.
+type DNSConfig struct {
+	// Provider is cloudflare, gcp, route53, digitalocean or exec.
+	Provider string `yaml:"provider"`
+	// WildcardRecord also points *.<domain> at the domain, with a CNAME.
+	WildcardRecord bool `yaml:"wildcard_record"`
+	// PropagationTimeout is how long to wait for the zone's nameservers
+	// to serve the challenge's records. Default 2m.
+	PropagationTimeout time.Duration `yaml:"propagation_timeout"`
+	// Nameservers are asked for the challenge's records instead of the
+	// zone's own (found through its NS records): host or host:port.
+	Nameservers []string `yaml:"nameservers"`
+	// Settings are the providers' settings, each under its name:
+	// cloudflare: {api_token: ...}.
+	Settings map[string]map[string]string `yaml:",inline"`
+}
+
+// Options returns the settings of the chosen provider.
+func (d DNSConfig) Options() map[string]string { return d.Settings[d.Provider] }
 
 type SSHConfig struct {
 	Listen      string `yaml:"listen"`
@@ -338,6 +424,9 @@ func (c *Config) setDefaults() {
 	if c.TCP.MaxPorts == 0 {
 		c.TCP.MaxPorts = 5
 	}
+	if c.DNS.PropagationTimeout == 0 {
+		c.DNS.PropagationTimeout = 2 * time.Minute
+	}
 	for i := range c.Auth.Providers {
 		p := &c.Auth.Providers[i]
 		if p.Name == "" {
@@ -358,6 +447,15 @@ func (c *Config) resolvePaths(base string) {
 	for _, p := range []*string{&c.DataDir, &c.HTTP.TLS.CertFile, &c.HTTP.TLS.KeyFile, &c.SSH.HostKeyFile, &c.Admin.Socket} {
 		if *p != "" && !filepath.IsAbs(*p) {
 			*p = filepath.Join(base, *p)
+		}
+	}
+	// The DNS providers' files too: dns.exec.command and the like.
+	for name, opts := range c.DNS.Settings {
+		spec, _ := dns.Lookup(name)
+		for _, f := range spec.Fields {
+			if v := opts[f.Name]; f.Path && v != "" && !filepath.IsAbs(v) {
+				opts[f.Name] = filepath.Join(base, v)
+			}
 		}
 	}
 }
@@ -394,6 +492,9 @@ func (c *Config) validate() error {
 	}
 	if tls.Enabled() && u.Scheme != "https" {
 		return errors.New("public_url must use https:// when http.tls is enabled")
+	}
+	if tls.ProxyProtocol && !tls.Enabled() {
+		return errors.New("http.tls.proxy_protocol needs http.tls: acme or cert_file and key_file")
 	}
 
 	// Without a sign-in method or anyone who may sign in, intergate starts
@@ -437,7 +538,51 @@ func (c *Config) validate() error {
 			return fmt.Errorf("%s.type must be github or oidc", where)
 		}
 	}
+	if err := c.validateDNS(); err != nil {
+		return err
+	}
+	if err := c.parseTrustedProxies(); err != nil {
+		return err
+	}
 	return c.TCP.parse()
+}
+
+func (c *Config) validateDNS() error {
+	d := c.DNS
+	for name := range d.Settings {
+		if _, ok := dns.Lookup(name); !ok {
+			return fmt.Errorf("dns.%s: unknown setting or DNS provider (providers: %s)", name, strings.Join(dns.Names(), ", "))
+		}
+	}
+	if d.PropagationTimeout < 10*time.Second || d.PropagationTimeout > time.Hour {
+		return errors.New("dns.propagation_timeout must be between 10s and 1h")
+	}
+	for i, ns := range d.Nameservers {
+		if _, _, err := net.SplitHostPort(ns); err != nil {
+			ns = net.JoinHostPort(strings.Trim(ns, "[]"), "53")
+		}
+		host, port, err := net.SplitHostPort(ns)
+		if n, perr := strconv.Atoi(port); err != nil || host == "" || perr != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("dns.nameservers: %q is not a host or host:port", d.Nameservers[i])
+		}
+		c.DNS.Nameservers[i] = ns
+	}
+	if d.Provider == "" {
+		if len(d.Settings) > 0 || d.WildcardRecord {
+			return errors.New("dns.provider is required with dns settings")
+		}
+		return nil
+	}
+	if !c.HTTP.TLS.ACME.Enabled {
+		return errors.New("dns: a DNS provider gets intergate a wildcard certificate from Let's Encrypt: enable http.tls.acme")
+	}
+	if _, ok := dns.Lookup(d.Provider); !ok {
+		return fmt.Errorf("dns.provider: unknown DNS provider %q (one of %s)", d.Provider, strings.Join(dns.Names(), ", "))
+	}
+	if err := dns.Validate(d.Provider, d.Options()); err != nil {
+		return fmt.Errorf("dns.%w", err)
+	}
+	return nil
 }
 
 // PasskeysEnabled reports whether users can sign in with passkeys.

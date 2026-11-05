@@ -33,13 +33,16 @@ func isAPI(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/api/")
 // boot is what the app knows before its first API call, embedded in the
 // page as JSON.
 type boot struct {
-	Version   string      `json:"version"`
-	Domain    string      `json:"domain"`
-	Email     bool        `json:"email"`
-	Passkeys  bool        `json:"passkeys"`
-	Providers []bootLink  `json:"providers"`
-	Limits    bootLimits  `json:"limits"`
-	TCP       *bootTCP    `json:"tcp"`
+	Version   string     `json:"version"`
+	Domain    string     `json:"domain"`
+	Email     bool       `json:"email"`
+	Passkeys  bool       `json:"passkeys"`
+	Providers []bootLink `json:"providers"`
+	Limits    bootLimits `json:"limits"`
+	TCP       *bootTCP   `json:"tcp"`
+	// Wildcard is set when intergate gets its certificates from Let's
+	// Encrypt: the Admin page's DNS tab can get a wildcard one.
+	Wildcard  bool        `json:"wildcard,omitempty"`
 	User      *me         `json:"user"`
 	CSRF      string      `json:"csrf,omitempty"`
 	EmailFlow string      `json:"email_flow,omitempty"`
@@ -94,6 +97,7 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, status int, pe
 		Passkeys:  s.webauthn != nil,
 		Providers: []bootLink{},
 		Limits:    bootLimits{Subdomains: s.cfg.Limits.SubdomainsPerUser, Keys: s.cfg.Limits.KeysPerSubdomain},
+		Wildcard:  s.wildcard != nil,
 		Error:     perr,
 	}
 	if s.cfg.TCP.Enabled() {

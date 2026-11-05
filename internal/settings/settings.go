@@ -1,9 +1,10 @@
 // Package settings keeps what is set up from the dashboard rather than in
 // the configuration file: email delivery, with its SMTP password sealed
 // with the data directory's secret key or read from the environment or a
-// file, and the setup that asks for it, opened by a one-time link.
+// file, and the setup that asks for it, opened by a one-time link; and the
+// DNS provider of the wildcard certificate, its secrets sealed too.
 //
-// The configuration file wins: with auth.email in it, email delivery set
+// The configuration file wins: with auth.email (or dns) in it, what is set
 // up here is ignored.
 package settings
 
@@ -114,6 +115,9 @@ type Settings struct {
 
 	mu    sync.RWMutex
 	email *Email
+	dns   *DNS
+	// dnsAEAD seals the DNS provider's secrets.
+	dnsAEAD cipher.AEAD
 
 	setup setup
 }
@@ -122,19 +126,18 @@ type Settings struct {
 // directory's secret key; the SMTP password is sealed with a key derived
 // from it.
 func Open(ctx context.Context, cfg *config.Config, st *store.Store, secret []byte) (*Settings, error) {
-	key, err := hkdf.Key(sha256.New, secret, nil, "intergate settings: smtp password", 32)
+	aead, err := newAEAD(secret, "intergate settings: smtp password")
 	if err != nil {
 		return nil, err
 	}
-	block, err := aes.NewCipher(key)
+	dnsAEAD, err := newAEAD(secret, "intergate settings: dns credentials")
 	if err != nil {
 		return nil, err
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
+	s := &Settings{cfg: cfg, store: st, aead: aead, dnsAEAD: dnsAEAD, CheckSMTP: g2smail.Check}
+	if err := s.loadDNS(ctx); err != nil {
 		return nil, err
 	}
-	s := &Settings{cfg: cfg, store: st, aead: aead, CheckSMTP: g2smail.Check}
 	raw, err := st.Setting(ctx, emailKey)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -373,24 +376,52 @@ const (
 	sealAD     = "smtp password"
 )
 
-func (s *Settings) seal(plain string) (string, error) {
-	nonce := make([]byte, s.aead.NonceSize())
+func (s *Settings) seal(plain string) (string, error) { return sealWith(s.aead, sealAD, plain) }
+
+func (s *Settings) open(sealed string) (string, error) {
+	plain, err := openWith(s.aead, sealAD, sealed)
+	switch {
+	case errors.Is(err, errDamaged):
+		return "", inputError("The stored SMTP password is damaged: enter it again.")
+	case err != nil:
+		return "", inputError("The stored SMTP password can't be read with this data directory's secret key: enter it again.")
+	}
+	return plain, nil
+}
+
+var errDamaged = errors.New("damaged")
+
+func sealWith(aead cipher.AEAD, ad, plain string) (string, error) {
+	nonce := make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	out := s.aead.Seal(nonce, nonce, []byte(plain), []byte(sealAD))
+	out := aead.Seal(nonce, nonce, []byte(plain), []byte(ad))
 	return sealPrefix + base64.RawURLEncoding.EncodeToString(out), nil
 }
 
-func (s *Settings) open(sealed string) (string, error) {
+func openWith(aead cipher.AEAD, ad, sealed string) (string, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(sealed, sealPrefix))
-	n := s.aead.NonceSize()
+	n := aead.NonceSize()
 	if !strings.HasPrefix(sealed, sealPrefix) || err != nil || len(raw) < n {
-		return "", inputError("The stored SMTP password is damaged: enter it again.")
+		return "", errDamaged
 	}
-	plain, err := s.aead.Open(nil, raw[:n], raw[n:], []byte(sealAD))
+	plain, err := aead.Open(nil, raw[:n], raw[n:], []byte(ad))
 	if err != nil {
-		return "", inputError("The stored SMTP password can't be read with this data directory's secret key: enter it again.")
+		return "", err
 	}
 	return string(plain), nil
+}
+
+// newAEAD returns AES-256-GCM with a key derived from secret for a purpose.
+func newAEAD(secret []byte, purpose string) (cipher.AEAD, error) {
+	key, err := hkdf.Key(sha256.New, secret, nil, purpose, 32)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
 }

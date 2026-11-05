@@ -35,6 +35,10 @@ ssh -p 2222 -R myapp:80:localhost:3000 gate.example.com
   client, which runs without installing anything.
 - **Single static binary** with SQLite storage and automatic HTTPS (Let's
   Encrypt) — or Docker, or Kubernetes with Traefik.
+- **One wildcard certificate** for every subdomain, through your DNS
+  provider's API — Cloudflare, Google Cloud DNS, Amazon Route 53,
+  DigitalOcean, or a program of yours for any other — set up from the
+  dashboard's Admin page once intergate runs.
 
 ## How it works
 
@@ -198,6 +202,11 @@ configuration, sign in at `https://gate.example.com` with an administrator
 email), register a subdomain, paste your public key (`~/.ssh/id_ed25519.pub`)
 and connect with the `ssh -R` command the dashboard shows.
 
+With Let's Encrypt, the dashboard gets a certificate on its first visit, and
+each subdomain as it is registered. For [one wildcard
+certificate](#wildcard-certificate-and-dns-providers) instead, set up your
+DNS provider in the dashboard: **Admin → DNS**.
+
 ### The dashboard's setup
 
 Until intergate can send sign-in codes and someone may sign in, its
@@ -234,6 +243,107 @@ once they enter that code, so a relay that can't deliver never replaces one
 that can. Code emails come as plain text and HTML, with the code leading the
 subject and standing alone in the message, the way Gmail's "Copy code" and
 Apple's AutoFill find it.
+
+### Wildcard certificate and DNS providers
+
+Out of the box, intergate gets a Let's Encrypt certificate for the dashboard
+on its first visit, and for each subdomain as it is registered (HTTP-01 or
+TLS-ALPN-01; a failure is tried again on the first visit): nothing to set
+up, but every name lands in the public Certificate Transparency logs, and
+Let's Encrypt allows 50 new certificates a week per domain.
+
+With a DNS provider, intergate gets **one certificate for `gate.example.com`
+and `*.gate.example.com`** instead, through ACME's DNS-01 challenge: it adds
+the challenge's TXT records with the provider's API, waits until the zone's
+nameservers serve them, and removes them once Let's Encrypt has checked.
+New subdomains then work at once. The certificate is renewed with a third
+of its life left (30 days for Let's Encrypt's 90-day certificates); a
+failed try is tried again after 5, 10, 20 and 40 minutes, then hourly.
+Until the wildcard certificate is there, and after a provider is removed,
+the certificates of each host keep working.
+
+Owners set it up on the Admin page's **DNS** tab (admins see it): choose the
+provider, enter its credentials and, optionally, let intergate point
+`*.gate.example.com` at `gate.example.com` with a CNAME (replacing the A,
+AAAA or CNAME records that name had). Before saving, intergate adds a TXT
+record (`_intergate-check.gate.example.com`) through the provider and
+removes it, so credentials that can't change the zone are never saved. The
+secrets are encrypted in the database (AES-256-GCM, with a key derived from
+the data directory's `secret.key`) and never shown again. The tab shows the
+certificate, its renewal, and what the last try did or why it failed, with
+**Try again now**; `intergate status` shows it too.
+
+| Provider | `provider` | Credentials |
+| --- | --- | --- |
+| Cloudflare | `cloudflare` | An API token with **Zone → DNS → Edit** (and **Zone → Zone → Read**, unless you give `zone_id`). |
+| Google Cloud DNS | `gcp` | A service account with **DNS Administrator** (`roles/dns.admin`): its JSON key, or Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS`, a GCE VM's, GKE Workload Identity, Cloud Run). `project` and `managed_zone` are found when left out. |
+| Amazon Route 53 | `route53` | An access key allowed `route53:ListHostedZonesByName`, `ListResourceRecordSets` and `ChangeResourceRecordSets`; without one, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, then the EC2 instance's role. |
+| DigitalOcean | `digitalocean` | A personal access token with the `domain` scopes. |
+| Anything else | `exec` | A program of yours (configuration file only). |
+
+The zone is found from the domain (the provider's zone for
+`gate.example.com` or `example.com`), unless its ID is given. The DNS tab
+is there when intergate gets its certificates from Let's Encrypt
+(`http.tls.acme`): with your own wildcard certificate, or a reverse proxy in
+front, there is nothing for it to do. So:
+
+- **Binary and systemd service:** all of it. Secrets the configuration file
+  refers to as `${VAR}` go in `/etc/intergate/intergate.env`. The service's
+  sandbox hides home directories: for Google Cloud, upload the key in the
+  dashboard, point `GOOGLE_APPLICATION_CREDENTIALS` at a file the
+  `intergate` user can read, or use the VM's service account.
+- **Docker:** all of it, with the certificate kept in the `/data` volume.
+  The image has no shell, so an `exec` provider must be a program that runs
+  on its own (a static binary in `/data`), not a script; intergate says so
+  when it starts.
+- **Kubernetes (Helm):** with `traefik.tls.passthrough`, all of it:
+  Traefik passes TLS through to intergate. In the chart's default mode,
+  Traefik terminates TLS, so the wildcard certificate comes from Traefik's
+  DNS-01 resolver or cert-manager, set up as you install, and the DNS tab
+  does not show. See [Kubernetes with Traefik](#kubernetes-with-traefik).
+
+The configuration file can set the provider instead, and then wins over the
+dashboard, which shows it read-only:
+
+```yaml
+dns:
+  provider: cloudflare
+  cloudflare:
+    api_token: ${CLOUDFLARE_API_TOKEN}
+  wildcard_record: true   # optional: *.gate.example.com CNAME gate.example.com
+```
+
+Only the configuration file can run a program or name a file on the server:
+the `exec` provider, and `gcp`'s `credentials_file` (the dashboard takes the
+key's content). `exec` covers any other DNS service — RFC 2136 with
+`nsupdate`, a registrar's API, an `acme.sh` hook… — as
+`PROGRAM set NAME TYPE TTL VALUE...` (replace those records) and
+`PROGRAM delete NAME TYPE`, with fully qualified names without the final
+dot and TXT values unquoted, in intergate's environment, exiting 0 once
+done. For instance, with `nsupdate` and a TSIG key:
+
+```sh
+#!/bin/sh
+# /etc/intergate/dns-hook.sh: dns.exec.command
+action=$1 name=$2 type=$3 ttl=$4
+{
+  echo "server ns1.example.com"
+  echo "update delete $name. $type"
+  if [ "$action" = set ]; then
+    shift 4
+    for v in "$@"; do
+      case $type in TXT) v="\"$v\"" ;; CNAME) v="$v." ;; esac
+      echo "update add $name. $ttl $type $v"
+    done
+  fi
+  echo send
+} | nsupdate -k /etc/intergate/tsig.key
+```
+
+intergate waits up to `dns.propagation_timeout` (2 minutes) for
+every authoritative nameserver of the zone to serve the challenge's
+records; `dns.nameservers` asks others instead, e.g. with split-horizon DNS
+or when outgoing DNS is only allowed to some servers.
 
 ### Commands
 
@@ -282,7 +392,8 @@ the first one, build it with `docker build -t intergate .`. See
 [`deploy/docker/compose.yaml`](deploy/docker/compose.yaml) for Compose.
 With Docker alone, choose Let's Encrypt in the setup: intergate gets a
 certificate for each registered subdomain on demand, so no DNS challenge is
-needed.
+needed — or set up your DNS provider in the dashboard (Admin → DNS) for one
+wildcard certificate.
 
 ### Kubernetes with Traefik
 
@@ -292,9 +403,8 @@ and to the classic repository `https://jgermade.github.io/intergate/charts`
 (for tools without OCI support, such as helm-dashboard), so there is nothing
 to clone (from a clone, `deploy/helm/intergate` works the same):
 
-- an `IngressRoute` for `gate.example.com` and its subdomains (TLS from a
-  Traefik resolver with a DNS-01 challenge, an existing wildcard secret, or
-  cert-manager);
+- an `IngressRoute` for `gate.example.com` and its subdomains, with TLS
+  from Traefik or from intergate itself (see below);
 - an `IngressRouteTCP` on a dedicated Traefik entry point for SSH, with the
   PROXY protocol so intergate sees client addresses — or a `LoadBalancer`
   Service instead;
@@ -303,10 +413,36 @@ to clone (from a clone, `deploy/helm/intergate` works the same):
   `externalTrafficPolicy: Local` so allow lists see client addresses. Keep
   the range small: it is one or two Service ports each.
 
+Who terminates TLS is the choice to make:
+
+- **Traefik** (the default): it needs a certificate for `gate.example.com`
+  and `*.gate.example.com` from the start — a Traefik resolver with a
+  DNS-01 challenge (`traefik.tls.certResolver`), an existing wildcard
+  secret (`traefik.tls.secretName`) or cert-manager (`certManager`) — with
+  the DNS provider's credentials in Traefik's or cert-manager's
+  configuration. Traefik's HTTP middlewares and access logs apply, and
+  intergate reads client addresses from `X-Forwarded-For`.
+- **intergate** (`traefik.tls.passthrough: true`): Traefik routes the HTTPS
+  connections of the domain and its subdomains by name without decrypting
+  them, with the PROXY protocol so intergate sees client addresses (and
+  trusts no `X-Forwarded-For`). intergate then gets its certificates from
+  Let's Encrypt as the binary does: the dashboard works once installed,
+  each subdomain gets one as it is registered, and an owner can set up a
+  DNS provider in the dashboard (Admin → DNS) for [one wildcard
+  certificate](#wildcard-certificate-and-dns-providers). Traefik's HTTP
+  middlewares don't apply to these hosts, and the certificates live on the
+  volume, so keep `persistence` enabled. Plain HTTP goes through the
+  `traefik.tls.httpEntryPoints` (`web`) to intergate, which redirects it
+  and answers HTTP-01 challenges.
+
 ```bash
 helm install intergate oci://ghcr.io/jgermade/charts/intergate \
   --set domain=gate.example.com \
   --set traefik.tls.certResolver=letsencrypt-dns
+# or, with intergate getting its own certificates:
+helm install intergate oci://ghcr.io/jgermade/charts/intergate \
+  --set domain=gate.example.com \
+  --set traefik.tls.passthrough=true --set traefik.tls.acmeEmail=you@example.com
 kubectl exec deploy/intergate -- intergate setup-url    # the link to the dashboard's setup
 kubectl exec -it deploy/intergate -- intergate config
 ```
@@ -398,7 +534,17 @@ Highlights:
   subdomain and account but owners', owners manage everything, and
   `auth.admins` are always owners. With none of them, the dashboard's setup
   asks for the owner.
-- `ssh.proxy_protocol`: expect a PROXY protocol header from a load balancer.
+- `ssh.proxy_protocol`, `http.tls.proxy_protocol`: expect a PROXY protocol
+  header from a load balancer, or from a proxy that passes TLS through.
+- `trusted_proxies`: the addresses (IPs or CIDR ranges) your proxies and load
+  balancers connect from; loopback and private networks by default. Only
+  they may tell intergate a client's address, with `X-Forwarded-For` or a
+  PROXY header. Set it when a proxy reaches intergate from a public address
+  (a load balancer outside your private network, a cluster whose pods have
+  public IPv6 addresses).
+- `dns`: a DNS provider for [one wildcard
+  certificate](#wildcard-certificate-and-dns-providers), with
+  `http.tls.acme`. Without it, owners can set one up from the dashboard.
 - `tcp.ports`: the range TCP and UDP ports are allocated from (e.g. `30000-30019`);
   `tcp.max_ports` per subdomain (5), `tcp.public_host` for their addresses
   (the SSH host by default) and `tcp.listen_host` to listen on one interface.
@@ -451,6 +597,22 @@ auth:
   cookie tied to the dashboard session. Signing out revokes access to every
   tunnel. intergate's cookies are stripped before requests reach the app.
   Signed-in users who may not open a tunnel see it as offline.
+- **DNS providers:** their credentials can change your zone, so give them
+  as little as the provider allows (Cloudflare: **Zone → DNS → Edit** on
+  that zone only). Set from the dashboard, only owners change them, after
+  intergate has made a change with them, and the secrets are encrypted like
+  the SMTP password, never sent back to the browser or the admin socket.
+  The dashboard can't set what runs a program or reads a file on the
+  server (`exec`, `credentials_file`): a stolen owner session can't turn
+  into code execution.
+- **Client addresses** are what limits sign-in codes per address, what the
+  logs show and what apps behind tunnels get in `X-Forwarded-For`. A proxy
+  can only tell them from `trusted_proxies` (loopback and private networks
+  by default): `X-Forwarded-For` from anywhere else is ignored, and a
+  listener with the PROXY protocol refuses connections from anywhere else
+  and requires the header from the proxies, so a proxy that stops sending it
+  fails at once instead of making every visitor share its address. Both are
+  logged, at most once an hour per address.
 - **TCP ports** check every connection's address against the port's allow
   list, which needs the real client address: publish the range directly, or
   keep it (`externalTrafficPolicy: Local`) behind a load balancer. Data is

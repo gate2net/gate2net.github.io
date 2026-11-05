@@ -14,20 +14,24 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	texttemplate "text/template"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/jgermade/intergate/internal/config"
+	"github.com/jgermade/intergate/internal/dns"
 	"github.com/jgermade/intergate/internal/mail"
 	"github.com/jgermade/intergate/internal/manage"
 	"github.com/jgermade/intergate/internal/settings"
 	"github.com/jgermade/intergate/internal/store"
 	"github.com/jgermade/intergate/internal/tunnel"
+	"github.com/jgermade/intergate/internal/wildcard"
 )
 
 //go:embed templates ui
@@ -59,6 +63,11 @@ type Options struct {
 	Version string
 	// HostKey is the SSH host key's fingerprint, for /tunnel.sh.
 	HostKey string
+	// Wildcard keeps the wildcard certificate, when intergate gets its
+	// certificates from Let's Encrypt; DNSEnv is what its DNS providers
+	// get.
+	Wildcard *wildcard.Manager
+	DNSEnv   dns.Env
 }
 
 // Server is the HTTP handler for the dashboard and all tunnels.
@@ -71,6 +80,13 @@ type Server struct {
 	mailer    mail.Sender
 	mailerFor func(config.EmailConfig) mail.Sender
 	relay     relayChanges
+	wildcard  *wildcard.Manager
+	dnsEnv    dns.Env
+	// wildcardCheck caches whether *.<domain> resolves.
+	wildcardCheck wildcardCheck
+	// untrusted throttles the warnings about X-Forwarded-For from
+	// connections that are not trusted proxies'.
+	untrusted throttle
 	log       *slog.Logger
 	signer    signer
 	nonces    *nonceSet
@@ -117,6 +133,8 @@ func New(o Options) (*Server, error) {
 		codes:     newCodeStore(),
 		version:   o.Version,
 		hostKey:   o.HostKey,
+		wildcard:  o.Wildcard,
+		dnsEnv:    o.DNSEnv,
 	}
 	switch {
 	case s.mailerFor != nil:
@@ -288,6 +306,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/admin/email", admin(s.relayOwner(s.handleAdminRelayChange)))
 	mux.Handle("POST /api/admin/email/confirm", admin(s.relayOwner(s.handleAdminRelayConfirm)))
 	mux.Handle("DELETE /api/admin/email/pending", admin(s.relayOwner(s.handleAdminRelayCancel)))
+	mux.Handle("GET /api/admin/dns", admin(s.dnsAvailable(s.handleAdminDNS)))
+	mux.Handle("PUT /api/admin/dns", admin(s.dnsAvailable(s.dnsOwner(s.handleAdminDNSChange))))
+	mux.Handle("DELETE /api/admin/dns", admin(s.dnsAvailable(s.dnsOwner(s.handleAdminDNSDelete))))
+	mux.Handle("POST /api/admin/dns/retry", admin(s.dnsAvailable(s.dnsOwner(s.handleAdminDNSRetry))))
 
 	return s.securityHeaders(s.withSession(mux))
 }
@@ -405,7 +427,8 @@ func (s *Server) sameOrigin(next http.HandlerFunc) http.Handler {
 
 // clientIP is the visitor's address, for rate limiting and logs.
 func (s *Server) clientIP(r *http.Request) string {
-	if s.cfg.HTTP.TrustProxyHeaders {
+	host := peerHost(r)
+	if s.trustsForwarded(r, host) {
 		// The last entry was added by the proxy we trust.
 		if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
 			parts := strings.Split(xff[len(xff)-1], ",")
@@ -414,11 +437,54 @@ func (s *Server) clientIP(r *http.Request) string {
 			}
 		}
 	}
+	return host
+}
+
+// peerHost is the address the request came from: a proxy's, or the
+// client's.
+func peerHost(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// trustsForwarded reports whether X-Forwarded-For from this peer tells the
+// client's address: with http.trust_proxy_headers, and from one of the
+// trusted_proxies. A header from anyone else is ignored, and logged now and
+// then, so a proxy left out of trusted_proxies shows.
+func (s *Server) trustsForwarded(r *http.Request, peer string) bool {
+	if !s.cfg.HTTP.TrustProxyHeaders {
+		return false
+	}
+	if ip, err := netip.ParseAddr(peer); err == nil && s.cfg.TrustedProxy(ip) {
+		return true
+	}
+	if len(r.Header.Values("X-Forwarded-For")) > 0 && s.untrusted.due(peer) {
+		s.log.Warn("X-Forwarded-For ignored: the connection does not come from trusted_proxies", "from", peer)
+	}
+	return false
+}
+
+// throttle tells when to log about a key again: once an hour.
+type throttle struct {
+	mu   sync.Mutex
+	last map[string]time.Time
+}
+
+func (t *throttle) due(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	if t.last == nil || len(t.last) > 1000 {
+		t.last = map[string]time.Time{}
+	}
+	if now.Sub(t.last[key]) < time.Hour {
+		return false
+	}
+	t.last[key] = now
+	return true
 }
 
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {

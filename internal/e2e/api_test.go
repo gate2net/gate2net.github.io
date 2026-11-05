@@ -27,7 +27,8 @@ type bootData struct {
 		Status  int    `json:"status"`
 		Message string `json:"message"`
 	} `json:"error"`
-	Setup *setupState `json:"setup"`
+	Setup    *setupState `json:"setup"`
+	Wildcard bool        `json:"wildcard"`
 }
 
 // setupState is the setup's state, in the page and in the setup's answers.

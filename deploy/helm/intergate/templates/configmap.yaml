@@ -1,8 +1,15 @@
 {{- $sshPublicHost := .Values.ssh.publicHost | default .Values.domain -}}
+{{- $http := dict "listen" ":8080" "trust_proxy_headers" true -}}
+{{- if eq (include "intergate.passthrough" .) "true" }}
+{{- /* TLS comes straight from visitors, through Traefik: no proxy headers to trust. */}}
+{{- $acme := dict "enabled" true -}}
+{{- with .Values.traefik.tls.acmeEmail }}{{ $_ := set $acme "email" . }}{{ end -}}
+{{- $http = dict "listen" ":8080" "tls" (dict "listen" ":8443" "proxy_protocol" true "acme" $acme) -}}
+{{- end -}}
 {{- $defaults := dict
   "public_url" (printf "https://%s" .Values.domain)
   "data_dir" "/data"
-  "http" (dict "listen" ":8080" "trust_proxy_headers" true)
+  "http" $http
   "ssh" (dict "listen" ":2222" "public_host" $sshPublicHost "public_port" (int .Values.ssh.publicPort) "proxy_protocol" (eq (include "intergate.proxyProtocol" .) "true"))
 -}}
 {{- if .Values.tcp.enabled }}

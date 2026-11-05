@@ -19,6 +19,11 @@ imagePullSecrets: []
 # intergate.example.yaml can go here. Reference secrets as ${VAR} and put
 # them in secretEnv or existingSecret.
 #
+# Client addresses come from Traefik, which intergate trusts when it
+# connects from a private network (trusted_proxies), as pods usually do. If
+# your pods have public addresses (some IPv6 clusters), set
+# trusted_proxies to the pods' range, e.g. trusted_proxies: ["2001:db8:42::/56"].
+#
 # Without email delivery or admins, the dashboard's setup asks for them on
 # a one-time link (`kubectl exec deploy/intergate -- intergate setup-url`):
 # the SMTP server, stored on the volume with its password encrypted, and
@@ -56,8 +61,23 @@ traefik:
   enabled: true
   entryPoints: [websecure]
   tls:
-    # Name of a Traefik certificate resolver. Tunnels need a certificate for
-    # *.<domain>, so the resolver must use the DNS-01 challenge.
+    # Let intergate terminate TLS itself, with Let's Encrypt, as it does
+    # with the binary or Docker: Traefik routes the HTTPS connections of
+    # <domain> and its subdomains by name without decrypting them, with the
+    # PROXY protocol so intergate sees client addresses. The dashboard works
+    # once installed, each subdomain gets a certificate as it is registered,
+    # and an owner can set up a DNS provider in the dashboard (Admin → DNS)
+    # for one wildcard certificate. certResolver, secretName and certManager
+    # are not used then. The certificates live on the volume: keep
+    # persistence enabled.
+    passthrough: false
+    # With passthrough: Let's Encrypt's contact for the certificates, and
+    # Traefik's entry points for plain HTTP (redirects to HTTPS, HTTP-01).
+    acmeEmail: ""
+    httpEntryPoints: [web]
+    # Without passthrough, Traefik terminates TLS. Name of a Traefik
+    # certificate resolver: tunnels need a certificate for *.<domain>, so
+    # the resolver must use the DNS-01 challenge.
     certResolver: ""
     # Or an existing TLS secret holding a certificate for <domain> and
     # *.<domain> (see certManager below).

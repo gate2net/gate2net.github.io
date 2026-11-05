@@ -38,6 +38,9 @@ type Service struct {
 	ports    *ports.Registry
 	names    *names.Checker
 	log      *slog.Logger
+	// SubdomainCreated, if set, is told about each new subdomain: the
+	// server gets its certificate then, rather than on the first visit.
+	SubdomainCreated func(name string)
 }
 
 // New returns a Service.
@@ -100,6 +103,9 @@ func (s *Service) CreateSubdomain(ctx context.Context, owner *store.User, name s
 		return nil, KeysResult{}, err
 	}
 	s.log.Info("subdomain created", "subdomain", name, "owner", owner.Email, "by", actor)
+	if s.SubdomainCreated != nil {
+		s.SubdomainCreated(name)
+	}
 	res, err := s.addKeys(ctx, d, keys, actor)
 	return d, res, err
 }

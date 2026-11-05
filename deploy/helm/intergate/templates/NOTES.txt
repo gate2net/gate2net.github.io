@@ -5,6 +5,12 @@ intergate is starting.
   SSH:       ssh -p {{ .Values.ssh.publicPort }} -R <name>:80:localhost:3000 {{ .Values.ssh.publicHost | default .Values.domain }}
 
 Point {{ .Values.domain }} and *.{{ .Values.domain }} to Traefik in DNS.
+{{- if eq (include "intergate.passthrough" .) "true" }}
+
+intergate gets its own certificates from Let's Encrypt (traefik.tls.passthrough):
+the dashboard's on its first visit, each subdomain's as it is registered. For one
+wildcard certificate instead, set up your DNS provider in the dashboard: Admin → DNS.
+{{- end }}
 {{- if and .Values.traefik.enabled .Values.traefik.ssh.enabled }}
 
 Traefik needs a TCP entry point named "{{ .Values.traefik.ssh.entryPoint }}" listening on the SSH port and

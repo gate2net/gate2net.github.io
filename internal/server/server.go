@@ -15,8 +15,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 
 	"github.com/jgermade/intergate/internal/admin"
 	"github.com/jgermade/intergate/internal/config"
+	"github.com/jgermade/intergate/internal/dns"
 	"github.com/jgermade/intergate/internal/mail"
 	"github.com/jgermade/intergate/internal/manage"
 	"github.com/jgermade/intergate/internal/names"
@@ -36,6 +39,7 @@ import (
 	"github.com/jgermade/intergate/internal/store"
 	"github.com/jgermade/intergate/internal/tunnel"
 	"github.com/jgermade/intergate/internal/web"
+	"github.com/jgermade/intergate/internal/wildcard"
 )
 
 // Options customize a Server, mostly for tests.
@@ -47,6 +51,9 @@ type Options struct {
 	MailerFor func(config.EmailConfig) mail.Sender
 	// HTTPClient is used to reach OAuth providers.
 	HTTPClient *http.Client
+	// DNSPropagated replaces the check that the zone's nameservers serve
+	// the TXT records of the wildcard certificate's challenge.
+	DNSPropagated func(ctx context.Context, name string, values []string) error
 }
 
 // Server is a configured intergate instance.
@@ -63,6 +70,13 @@ type Server struct {
 	ssh      *sshd.Server
 	web      *web.Server
 	admin    *admin.Handler
+	// autocert gets each host's certificate, and wildcard the wildcard
+	// one, when intergate gets its certificates from Let's Encrypt.
+	autocert *autocert.Manager
+	wildcard *wildcard.Manager
+	dnsEnv   dns.Env
+	// warming counts the certificates being got for new subdomains.
+	warming sync.WaitGroup
 }
 
 // New opens the data directory and builds every component.
@@ -95,7 +109,23 @@ func New(cfg *config.Config, log *slog.Logger, opts Options) (*Server, error) {
 		s.store.Close()
 		return nil, fmt.Errorf("load SSH host key: %w", err)
 	}
+	if acmeCfg := cfg.HTTP.TLS.ACME; acmeCfg.Enabled {
+		s.autocert = &autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			Cache:      autocert.DirCache(filepath.Join(cfg.DataDir, "acme")),
+			Email:      acmeCfg.Email,
+			HostPolicy: hostPolicy(cfg, s.store),
+			Client:     &acme.Client{DirectoryURL: acmeCfg.DirectoryURL},
+		}
+		if err := s.openWildcard(opts); err != nil {
+			s.store.Close()
+			return nil, err
+		}
+	}
 	s.manage = manage.New(cfg, s.store, s.registry, s.ports, names.NewChecker(cfg.ReservedSubdomains), log.With("component", "manage"))
+	if s.autocert != nil {
+		s.manage.SubdomainCreated = s.warmCertificate
+	}
 	s.ssh = sshd.New(cfg, s.store, s.registry, s.ports, s.hostKey, log.With("component", "ssh"))
 	s.web, err = web.New(web.Options{
 		Config:     cfg,
@@ -110,13 +140,91 @@ func New(cfg *config.Config, log *slog.Logger, opts Options) (*Server, error) {
 		HTTPClient: opts.HTTPClient,
 		Version:    opts.Version,
 		HostKey:    ssh.FingerprintSHA256(s.hostKey.PublicKey()),
+		Wildcard:   s.wildcard,
+		DNSEnv:     s.dnsEnv,
 	})
 	if err != nil {
 		s.store.Close()
 		return nil, err
 	}
 	s.admin = admin.NewHandler(cfg, s.store, s.manage, s.settings, log.With("component", "admin"), opts.Version)
+	if s.wildcard != nil {
+		s.admin.Certificate = func() *wildcard.Status {
+			st := s.wildcard.Status()
+			return &st
+		}
+	}
 	return s, nil
+}
+
+// openWildcard loads the wildcard certificate and sets up its DNS
+// provider, from the configuration file or the dashboard.
+func (s *Server) openWildcard(opts Options) error {
+	cfg := s.cfg
+	propagated := opts.DNSPropagated
+	switch {
+	case propagated != nil:
+	case len(cfg.DNS.Nameservers) > 0:
+		propagated = dns.PropagationAt(cfg.DNS.Nameservers, cfg.DNS.PropagationTimeout)
+	default:
+		propagated = dns.Propagation(cfg.DNS.PropagationTimeout)
+	}
+	var err error
+	s.wildcard, err = wildcard.New(wildcard.Options{
+		Domain:       cfg.Domain(),
+		Email:        cfg.HTTP.TLS.ACME.Email,
+		DirectoryURL: cfg.HTTP.TLS.ACME.DirectoryURL,
+		Dir:          filepath.Join(cfg.DataDir, "wildcard"),
+		Log:          s.log.With("component", "wildcard"),
+		Propagated:   propagated,
+	})
+	if err != nil {
+		return fmt.Errorf("wildcard certificate: %w", err)
+	}
+	s.dnsEnv = dns.Env{Log: s.log.With("component", "dns")}
+	name, o, wildcardRecord, err := s.settings.DNSProvider()
+	if err == nil && name != "" {
+		var p dns.Provider
+		if p, err = dns.New(name, o, s.dnsEnv); err == nil {
+			s.wildcard.Configure(&wildcard.Provider{Provider: p, Name: name, WildcardRecord: wildcardRecord})
+		}
+	}
+	if err != nil {
+		// The configuration file's mistakes stop startup; the
+		// dashboard's show there, to be fixed there.
+		if s.settings.DNSSource() == settings.SourceConfig {
+			return fmt.Errorf("dns: %w", err)
+		}
+		s.log.Error("the DNS provider set up in the dashboard can't be used", "provider", name, "err", err)
+		s.wildcard.Broken(name, err)
+	}
+	return nil
+}
+
+// warmCertificate gets the certificate of a new subdomain now, so its first
+// visitor does not wait for it; a failure is only logged, and tried again
+// on the first visit. Nothing is done when the wildcard certificate covers
+// it, or a DNS provider is about to.
+func (s *Server) warmCertificate(name string) {
+	host := name + "." + s.cfg.Domain()
+	ecdsaHello := &tls.ClientHelloInfo{
+		ServerName:       host,
+		SignatureSchemes: []tls.SignatureScheme{tls.ECDSAWithP256AndSHA256},
+		SupportedCurves:  []tls.CurveID{tls.CurveP256},
+		CipherSuites:     []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
+	}
+	if s.wildcard.Certificate(ecdsaHello) != nil || s.wildcard.Status().Provider != "" {
+		return
+	}
+	s.warming.Add(1)
+	go func() {
+		defer s.warming.Done()
+		if _, err := s.autocert.GetCertificate(ecdsaHello); err != nil {
+			s.log.Warn("certificate not issued: it is tried again on the first visit", "host", host, "err", err)
+			return
+		}
+		s.log.Info("certificate ready", "host", host)
+	}()
 }
 
 // Close releases the database.
@@ -133,6 +241,10 @@ func (s *Server) HostKey() ssh.PublicKey { return s.hostKey.PublicKey() }
 
 // Settings returns what is set up from the dashboard.
 func (s *Server) Settings() *settings.Settings { return s.settings }
+
+// Wildcard returns what keeps the wildcard certificate, or nil when
+// intergate does not get certificates from Let's Encrypt.
+func (s *Server) Wildcard() *wildcard.Manager { return s.wildcard }
 
 // Ports returns the forwarded TCP ports.
 func (s *Server) Ports() *ports.Registry { return s.ports }
@@ -192,14 +304,19 @@ func (s *Server) Run(ctx context.Context) error {
 		redirect := redirectToHTTPS(cfg)
 		httpsSrv = newServer(s.web)
 		if tlsCfg.ACME.Enabled {
-			m := &autocert.Manager{
-				Prompt:     autocert.AcceptTOS,
-				Cache:      autocert.DirCache(filepath.Join(cfg.DataDir, "acme")),
-				Email:      tlsCfg.ACME.Email,
-				HostPolicy: hostPolicy(cfg, s.store),
-				Client:     &acme.Client{DirectoryURL: tlsCfg.ACME.DirectoryURL},
-			}
+			m := s.autocert
 			httpsSrv.TLSConfig = m.TLSConfig()
+			// The wildcard certificate, once there is one; each host's
+			// own from autocert until then, and for its challenges.
+			perHost := httpsSrv.TLSConfig.GetCertificate
+			httpsSrv.TLSConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				if !slices.Contains(hello.SupportedProtos, acme.ALPNProto) {
+					if c := s.wildcard.Certificate(hello); c != nil {
+						return c, nil
+					}
+				}
+				return perHost(hello)
+			}
 			redirect = m.HTTPHandler(redirect)
 		} else {
 			cert, err := tls.LoadX509KeyPair(tlsCfg.CertFile, tlsCfg.KeyFile)
@@ -214,9 +331,12 @@ func (s *Server) Run(ctx context.Context) error {
 			closeAll()
 			return err
 		}
+		if tlsCfg.ProxyProtocol {
+			httpsLn = &proxyproto.Listener{Listener: httpsLn, ReadHeaderTimeout: 10 * time.Second, ConnPolicy: s.proxyPolicy("https")}
+		}
 	}
 	if cfg.SSH.ProxyProtocol {
-		sshLn = &proxyproto.Listener{Listener: sshLn, ReadHeaderTimeout: 10 * time.Second}
+		sshLn = &proxyproto.Listener{Listener: sshLn, ReadHeaderTimeout: 10 * time.Second, ConnPolicy: s.proxyPolicy("ssh")}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -258,6 +378,9 @@ func (s *Server) Run(ctx context.Context) error {
 		"ssh_host_key", ssh.FingerprintSHA256(s.hostKey.PublicKey()),
 		"sign_in", strings.Join(methods, ","),
 		"admin_socket", cfg.Admin.Socket)
+	if cfg.HTTP.TrustProxyHeaders || cfg.SSH.ProxyProtocol || cfg.HTTP.TLS.ProxyProtocol {
+		log.Info("client addresses from trusted proxies", "trusted_proxies", strings.Join(cfg.TrustedProxyRanges(), ","))
+	}
 	if cfg.TCP.Enabled() {
 		log.Info("tcp ports enabled", "range", cfg.TCP.Ports, "per_subdomain", cfg.TCP.MaxPorts, "address", cfg.TCPAddress(0))
 	}
@@ -272,6 +395,15 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	go cleanSessions(ctx, s.store, log)
+	wildcardDone := make(chan struct{})
+	if s.wildcard != nil {
+		go func() {
+			defer close(wildcardDone)
+			s.wildcard.Run(ctx)
+		}()
+	} else {
+		close(wildcardDone)
+	}
 
 	var runErr error
 	select {
@@ -284,6 +416,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	cancel()
 	<-adminDone
+	<-wildcardDone
 	s.ssh.Close()
 	s.ports.Close()
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
@@ -291,7 +424,49 @@ func (s *Server) Run(ctx context.Context) error {
 	for _, srv := range servers {
 		srv.Shutdown(shutdownCtx)
 	}
+	// Certificates of new subdomains being got: a little while.
+	warmed := make(chan struct{})
+	go func() {
+		s.warming.Wait()
+		close(warmed)
+	}()
+	select {
+	case <-warmed:
+	case <-shutdownCtx.Done():
+	}
 	return runErr
+}
+
+// proxyPolicy takes PROXY protocol headers from the trusted proxies only,
+// and requires one from them: connections from anywhere else are refused
+// (and logged now and then, so a proxy left out of trusted_proxies shows).
+func (s *Server) proxyPolicy(listener string) proxyproto.ConnPolicyFunc {
+	// The ranges were checked when the configuration was parsed.
+	trusted, _ := proxyproto.TrustProxyHeaderFromRanges(s.cfg.TrustedProxyRanges())
+	var mu sync.Mutex
+	last := map[string]time.Time{}
+	return func(o proxyproto.ConnPolicyOptions) (proxyproto.Policy, error) {
+		p, err := trusted(o)
+		if err != nil {
+			from := o.Upstream.String()
+			if host, _, herr := net.SplitHostPort(from); herr == nil {
+				from = host
+			}
+			mu.Lock()
+			if len(last) > 1000 {
+				clear(last)
+			}
+			due := time.Since(last[from]) > time.Hour
+			if due {
+				last[from] = time.Now()
+			}
+			mu.Unlock()
+			if due {
+				s.log.Warn("connection refused: PROXY protocol headers are only taken from trusted_proxies", "listener", listener, "from", from)
+			}
+		}
+		return p, err
+	}
 }
 
 // adoptLegacyDatabase renames the database of gate2net or gate2sky,

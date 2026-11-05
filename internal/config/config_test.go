@@ -1,10 +1,13 @@
 package config
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const base = `
@@ -162,6 +165,85 @@ func TestTCPPorts(t *testing.T) {
 	}
 }
 
+func TestDNS(t *testing.T) {
+	t.Setenv("TEST_SECRET", "x")
+	t.Setenv("CF_TOKEN", "cf-secret")
+	acme := base + "http:\n  tls:\n    acme: {enabled: true, email: a@example.com}\n"
+	cfg, err := Parse([]byte(acme + `dns:
+  provider: cloudflare
+  wildcard_record: true
+  cloudflare:
+    api_token: ${CF_TOKEN}
+    zone_id: 0123abc
+  route53:
+    hosted_zone_id: Z1
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := cfg.DNS.Options(); cfg.DNS.Provider != "cloudflare" || o["api_token"] != "cf-secret" || o["zone_id"] != "0123abc" || !cfg.DNS.WildcardRecord {
+		t.Errorf("dns %+v", cfg.DNS)
+	}
+	if cfg.DNS.PropagationTimeout != 2*time.Minute {
+		t.Errorf("propagation timeout %s", cfg.DNS.PropagationTimeout)
+	}
+	cfg, err = Parse([]byte(acme + "dns:\n  nameservers: [ns1.example.net, \"127.0.0.1:8053\", \"::1\"]\n"))
+	if err != nil || !slices.Equal(cfg.DNS.Nameservers, []string{"ns1.example.net:53", "127.0.0.1:8053", "[::1]:53"}) {
+		t.Errorf("nameservers: %v %v", err, cfg.DNS.Nameservers)
+	}
+	cfg, err = Parse([]byte(acme))
+	if err != nil || cfg.DNS.Provider != "" {
+		t.Errorf("no dns: %v %+v", err, cfg.DNS)
+	}
+	for name, doc := range map[string]string{
+		"without acme":     base + "dns:\n  provider: cloudflare\n  cloudflare: {api_token: t}\n",
+		"unknown provider": acme + "dns:\n  provider: bind\n",
+		"misspelled key":   acme + "dns:\n  provider: cloudflare\n  cloudflare: {api_token: t}\n  cloudfare: {api_token: t}\n",
+		"unknown option":   acme + "dns:\n  provider: cloudflare\n  cloudflare: {api_token: t, token: t}\n",
+		"missing option":   acme + "dns:\n  provider: cloudflare\n",
+		"no provider":      acme + "dns:\n  cloudflare: {api_token: t}\n",
+		"bad nameserver":   acme + "dns:\n  nameservers: [\"ns1:http\"]\n",
+		"bad timeout":      acme + "dns:\n  provider: cloudflare\n  cloudflare: {api_token: t}\n  propagation_timeout: 1s\n",
+		"not a block":      acme + "dns:\n  provider: cloudflare\n  cloudflare: {api_token: t}\n  ttl: 30\n",
+	} {
+		if _, err := Parse([]byte(doc)); err == nil {
+			t.Errorf("%s: expected an error", name)
+		} else if name == "misspelled key" && !strings.Contains(err.Error(), "dns.cloudfare") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestTrustedProxies(t *testing.T) {
+	t.Setenv("TEST_SECRET", "x")
+	cfg, err := Parse([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ip, want := range map[string]bool{
+		"127.0.0.1": true, "::1": true, "10.42.0.7": true, "172.31.255.1": true, "192.168.1.2": true,
+		"fd00::1": true, "::ffff:10.0.0.1": true,
+		"203.0.113.5": false, "172.32.0.1": false, "2001:db8::1": false, "100.64.0.1": false,
+	} {
+		if got := cfg.TrustedProxy(netip.MustParseAddr(ip)); got != want {
+			t.Errorf("TrustedProxy(%s) = %v by default", ip, got)
+		}
+	}
+	cfg, err = Parse([]byte(base + "trusted_proxies: [203.0.113.5, \"2001:db8::/32\", 198.51.100.0/24]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.TrustedProxyRanges(); !slices.Equal(got, []string{"203.0.113.5/32", "2001:db8::/32", "198.51.100.0/24"}) {
+		t.Errorf("ranges %v", got)
+	}
+	if cfg.TrustedProxy(netip.MustParseAddr("10.0.0.1")) || !cfg.TrustedProxy(netip.MustParseAddr("2001:db8::7")) {
+		t.Error("a list replaces the default")
+	}
+	if _, err := Parse([]byte(base + "trusted_proxies: [my-proxy]\n")); err == nil {
+		t.Error("a host name accepted in trusted_proxies")
+	}
+}
+
 func TestExampleConfig(t *testing.T) {
 	t.Setenv("SMTP_PASSWORD", "secret")
 	cfg, err := Load("../../intergate.example.yaml")
@@ -203,7 +285,8 @@ func TestLoadResolvesRelativePaths(t *testing.T) {
 	t.Setenv("TEST_SECRET", "x")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "intergate.yaml")
-	if err := os.WriteFile(path, []byte(base+"data_dir: state\n"), 0o600); err != nil {
+	doc := base + "data_dir: state\nhttp:\n  tls:\n    acme: {enabled: true}\ndns:\n  provider: exec\n  exec:\n    command: hooks/dns.sh\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(path)
@@ -212,5 +295,8 @@ func TestLoadResolvesRelativePaths(t *testing.T) {
 	}
 	if want := filepath.Join(dir, "state"); cfg.DataDir != want || cfg.Admin.Socket != filepath.Join(want, "admin.sock") {
 		t.Errorf("DataDir = %q, socket = %q; want under %q", cfg.DataDir, cfg.Admin.Socket, want)
+	}
+	if got, want := cfg.DNS.Options()["command"], filepath.Join(dir, "hooks/dns.sh"); got != want {
+		t.Errorf("dns.exec.command = %q, want %q", got, want)
 	}
 }
