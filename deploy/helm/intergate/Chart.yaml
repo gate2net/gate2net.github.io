@@ -2,8 +2,8 @@ apiVersion: v2
 name: intergate
 description: Expose local services on your domain through SSH tunnels, with a web dashboard (email codes, passkeys, OAuth).
 type: application
-version: 0.0.25
-appVersion: "0.0.25"
+version: 0.0.26
+appVersion: "0.0.26"
 keywords: [ssh, tunnel, reverse-proxy, ngrok, sish, traefik]
 home: https://github.com/jgermade/intergate
 sources:
