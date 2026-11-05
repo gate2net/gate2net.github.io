@@ -10,6 +10,7 @@
   const { ago, bytes, plural } = await import("@ui/lib/format.js")
   const CopyText = await import("@ui/components/copy-text.html")
   const Alert = await import("@theme/components/alert.html")
+  const Select = await import("@theme/components/select.html")
   const Badge = await import("@theme/components/badge.html")
   const Button = await import("@theme/components/button.html")
   const Card = await import("@theme/components/card.html")
@@ -46,6 +47,10 @@
     { id: "custom-udp", label: "Custom UDP", name: "", port: "", restricted: true, udp: true },
   ]
   const presetOf = id => PRESETS.find(p => p.id === id) || PRESETS.find(p => p.id === "")
+  const PRESET_ITEMS = PRESETS.map(p => ({
+    value: p.id, label: p.label, icon: p.udp ? "traffic" : "forward",
+    hint: p.port ? `Port ${p.port}${p.udp ? ", with the intergate client" : ""}` : p.udp ? "Any port, with the intergate client" : "Any port",
+  }))
 
   const path = () => "/subdomains/" + encodeURIComponent(sub.name)
   const lines = text => text.split(/[\s,]+/).filter(Boolean)
@@ -226,9 +231,7 @@
     <Alert :if="error" tone="bad" flush>{{ error }}</Alert>
     <div class="form-grid">
       <label>Service
-        <select class="field" name="preset" @change="choose($event.target.value)">
-          <option :each="p in PRESETS" :key="p.id" :value="p.id" :selected="p.id === preset">{{ p.label }}</option>
-        </select>
+        <Select name="preset" :model="preset" :items="PRESET_ITEMS" @change="choose($event.detail)" />
       </label>
       <label>Name
         <input name="port-name" required maxlength="32" pattern="[A-Za-z0-9]([A-Za-z0-9\-]{0,30}[A-Za-z0-9])?" autocomplete="off" spellcheck="false"

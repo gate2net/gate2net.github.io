@@ -131,6 +131,19 @@ var migrations = []string{
 		key   TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);`,
+	// SSH keys of an account, which its owner adds to subdomains: each
+	// subdomain's copy refers to it, and goes with it.
+	`CREATE TABLE user_keys (
+		id          INTEGER PRIMARY KEY,
+		user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		name        TEXT NOT NULL,
+		fingerprint TEXT NOT NULL,
+		public_key  TEXT NOT NULL,
+		created_at  INTEGER NOT NULL,
+		UNIQUE (user_id, fingerprint)
+	);
+	ALTER TABLE ssh_keys ADD COLUMN user_key_id INTEGER REFERENCES user_keys(id) ON DELETE CASCADE;
+	CREATE INDEX ssh_keys_user_key ON ssh_keys(user_key_id);`,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

@@ -147,6 +147,12 @@ a.who.active { background: var(--ig-fill); }
    at the foot of it; a long one pushes it down. */
 #app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 main.wrap { flex: 1 0 auto; width: 100%; padding-top: var(--ig-space-9); padding-bottom: 2.5rem; }
+/* What the page waits on, between the bar and the page. */
+.banner { width: 100%; margin-top: var(--ig-space-7); }
+.banner + main.wrap { padding-top: var(--ig-space-7); }
+.banner-body { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ig-space-3) var(--ig-space-7); }
+.banner-body p { margin: 0; flex: 1 1 26rem; }
+.banner-actions { display: flex; align-items: center; gap: var(--ig-space-6); white-space: nowrap; }
 footer.footer {
   color: var(--ig-fg-muted); font-size: var(--ig-text-sm); text-align: center;
   padding-top: var(--ig-space-9); padding-bottom: calc(var(--ig-space-9) + env(safe-area-inset-bottom));
@@ -299,11 +305,6 @@ select.role {
 .form-grid { display: grid; gap: var(--ig-space-5); grid-template-columns: 1fr; }
 @media (min-width: 640px) { .form-grid { grid-template-columns: 1.4fr 1fr .8fr; } }
 .form-grid.pair { grid-template-columns: 1fr 1fr; }
-select.field {
-  font: inherit; font-size: max(16px, 1rem); color: var(--ig-fg); background: var(--ig-field); width: 100%; padding: .5625rem .75rem;
-  border: var(--ig-hairline) solid var(--ig-field-line); border-radius: var(--ig-radius-control); box-shadow: var(--ig-shadow-inset);
-}
-select.field:focus { outline: none; border-color: var(--ig-accent); box-shadow: var(--ig-ring); background: var(--ig-field-focus); }
 .proto { text-transform: uppercase; font-size: var(--ig-text-2xs); font-weight: var(--ig-weight-heavy); letter-spacing: .04em; padding: 1px .3125rem; border-radius: var(--ig-radius-xs); background: var(--ig-fill); }
 .address { display: inline-flex; align-items: center; gap: .125rem; white-space: nowrap; }
 .address code { font-size: var(--ig-text-md); }
@@ -346,6 +347,15 @@ legend .hint { display: block; margin-top: 0; }
 .hint.help { white-space: pre-line; margin-top: calc(-1 * var(--ig-space-4)); }
 .form .actions { margin-top: 0; }
 .form-actions { display: flex; justify-content: flex-end; gap: var(--ig-space-4); }
+/* SSH keys: picked from the account's, or pasted, a line between. */
+.keys-forms { display: grid; gap: var(--ig-space-6); margin-top: var(--ig-space-7); }
+.keys-forms > .form { margin-top: 0; }
+.or { display: flex; align-items: center; gap: var(--ig-space-4); margin: 0; color: var(--ig-fg-muted); font-size: var(--ig-text-sm); }
+.or::before, .or::after { content: ""; flex: 1; border-top: var(--ig-hairline) solid var(--ig-separator); }
+.pick-key { flex-wrap: nowrap; align-items: stretch; }
+.pick-key > [data-c79-box]:first-child > * { flex: 1 1 0; min-width: 0; }
+.pick-key > [data-c79-box]:last-child > * { flex: none; }
+.key-subdomains { display: flex; flex-wrap: wrap; gap: .125rem .625rem; }
 /* What adds to the list in the card above it, centred under it. */
 .card-actions { display: flex; justify-content: center; gap: var(--ig-space-4); }
 

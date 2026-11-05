@@ -349,7 +349,11 @@ func (s *Service) EnsureUser(ctx context.Context, email, actor string) (*store.U
 // SetUserDisabled blocks or unblocks a user. Disabling ends their sessions
 // and closes their tunnels.
 func (s *Service) SetUserDisabled(ctx context.Context, userID int64, disabled bool, actor string) error {
-	err := s.store.SetUserDisabled(ctx, userID, disabled)
+	attached, err := s.store.UserKeyAttachments(ctx, userID)
+	if err != nil {
+		return err
+	}
+	err = s.store.SetUserDisabled(ctx, userID, disabled)
 	if errors.Is(err, store.ErrNotFound) {
 		return Errorf("user not found")
 	}
@@ -363,6 +367,8 @@ func (s *Service) SetUserDisabled(ctx context.Context, userID int64, disabled bo
 			}
 		}
 		s.ports.CloseOwner(userID, "the owner's account was disabled")
+		// Its keys on others' subdomains too.
+		s.closeAttached(attached, "its SSH key's account was disabled")
 	}
 	s.log.Info("user updated", "user_id", userID, "disabled", disabled, "by", actor)
 	return nil
@@ -372,7 +378,11 @@ func (s *Service) SetUserDisabled(ctx context.Context, userID int64, disabled bo
 // tunnels. Someone the configuration allows can sign in again, as a new
 // account.
 func (s *Service) DeleteUser(ctx context.Context, userID int64, actor string) error {
-	err := s.store.DeleteUser(ctx, userID)
+	attached, err := s.store.UserKeyAttachments(ctx, userID)
+	if err != nil {
+		return err
+	}
+	err = s.store.DeleteUser(ctx, userID)
 	if errors.Is(err, store.ErrNotFound) {
 		return Errorf("user not found")
 	}
@@ -385,6 +395,7 @@ func (s *Service) DeleteUser(ctx context.Context, userID int64, actor string) er
 		}
 	}
 	s.ports.CloseOwner(userID, "the owner's account was deleted")
+	s.closeAttached(attached, "its SSH key's account was deleted")
 	s.log.Info("user deleted", "user_id", userID, "by", actor)
 	return nil
 }

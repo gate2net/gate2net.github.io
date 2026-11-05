@@ -16,6 +16,8 @@
   const Segmented = await import("@theme/components/segmented.html")
   const ChoiceCards = await import("@theme/components/choice-cards.html")
   const OtpInput = await import("@theme/components/otp-input.html")
+  const Select = await import("@theme/components/select.html")
+  const FilePicker = await import("@theme/components/file-picker.html")
   const Tabs = await import("@theme/components/tabs.html")
   const Modal = await import("@theme/components/modal.html")
   const { ICONS } = await import("@theme/icons.js")
@@ -27,7 +29,7 @@
   const GROUPS = [
     ["Foundations", [["setup", "Setup"], ["colours", "Colours"], ["type", "Type"], ["shape", "Space · Shape · Motion"], ["icons", "Icons"]]],
     ["Display", [["button", "Button"], ["badge", "Badge"], ["alert", "Alert"], ["card", "Card"], ["facts", "Facts"]]],
-    ["Forms", [["switch", "Switch"], ["segmented", "Segmented"], ["choice-cards", "ChoiceCards"], ["otp-input", "OtpInput"]]],
+    ["Forms", [["switch", "Switch"], ["segmented", "Segmented"], ["choice-cards", "ChoiceCards"], ["select", "Select"], ["file-picker", "FilePicker"], ["otp-input", "OtpInput"]]],
     ["Navigation · Overlays", [["tabs", "Tabs"], ["modal", "Modal"]]],
   ]
 
@@ -89,6 +91,14 @@
   let restricted = "only"
   // A code on the wallpaper and one on a card: 123456 is the right one;
   // any other is turned down a moment later, as a server would.
+  let provider = "cloudflare"
+  const PROVIDERS = [
+    { value: "cloudflare", label: "Cloudflare", hint: "An API token", icon: "globe" },
+    { value: "gcp", label: "Google Cloud DNS", hint: "A service account key", icon: "server" },
+    { value: "route53", label: "Amazon Route 53", hint: "An access key", icon: "key" },
+    { value: "manual", label: "By hand", hint: "Not here yet", icon: "pencil", disabled: true },
+  ]
+  let keyFile = ""
   let otpWall = ""
   let otpCard = ""
   let wrongWall = false
@@ -408,6 +418,26 @@
       <p class="about">One of a few, each a card: radios underneath, so the arrows move between them. Chosen: <code>{{ access }}</code>, <code>{{ restricted }}</code>.</p>
       <Card title="Access"><ChoiceCards name="demo-access" :model="access" :items="ACCESS" /></Card>
       <Card title="Who can connect"><ChoiceCards name="demo-who" layout="stack" :model="restricted" :items="WHO" /></Card>
+    </section>
+
+    <section id="select" class="section">
+      <div class="section-head">
+        <h2>Select</h2>
+        <Button variant="secondary" size="sm" icon="code" @click="inspect('select')">Inspect</Button>
+      </div>
+      <p class="about">One of a list, in a field like the others of a form, each option with an icon and a line under its name. Chosen: <code>{{ provider }}</code>.</p>
+      <div class="both"><Select label="DNS provider" :model="provider" :items="PROVIDERS" /></div>
+      <Card><Select label="DNS provider" :model="provider" :items="PROVIDERS" /></Card>
+    </section>
+
+    <section id="file-picker" class="section">
+      <div class="section-head">
+        <h2>FilePicker</h2>
+        <Button variant="secondary" size="sm" icon="code" @click="inspect('file-picker')">Inspect</Button>
+      </div>
+      <p class="about">A file read in the browser, in a field: a button to choose it, then its name. {{ keyFile ? "Read " + keyFile.length + " characters." : "Nothing read yet." }}</p>
+      <div class="both"><FilePicker button="Choose the key" placeholder="No key chosen" label="Key" @pick="keyFile = $event.detail.text" /></div>
+      <Card><FilePicker button="Choose the key" chosen="service-account.json" label="Key" @pick="keyFile = $event.detail.text" /></Card>
     </section>
 
     <section id="otp-input" class="section">

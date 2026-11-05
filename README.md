@@ -19,7 +19,9 @@ ssh -p 2222 -R myapp:80:localhost:3000 gate.example.com
 - **Subdomains and SSH keys are registered in the dashboard** (or with
   `intergate config`). Each subdomain has its own authorized SSH keys: a key
   can only open tunnels on the subdomains it was added to, and unknown keys
-  are rejected during the SSH handshake.
+  are rejected during the SSH handshake. Keys added once to your account
+  (**Account → SSH keys**) can be picked on any of your subdomains;
+  removing one there removes it from all of them.
 - **Sign-in without passwords:** a one-time code sent by email, then
   passkeys (fingerprint, face or device PIN). GitHub and any OpenID Connect
   provider can be added as optional sign-in methods.
@@ -205,7 +207,9 @@ and connect with the `ssh -R` command the dashboard shows.
 With Let's Encrypt, the dashboard gets a certificate on its first visit, and
 each subdomain as it is registered. For [one wildcard
 certificate](#wildcard-certificate-and-dns-providers) instead, set up your
-DNS provider in the dashboard: **Admin → DNS**.
+DNS provider in the dashboard: **Admin → DNS**. Until there is one, owners
+see a banner about it at the top of the dashboard ("Not now" hides it in
+that browser).
 
 ### The dashboard's setup
 
@@ -349,7 +353,7 @@ or when outgoing DNS is only allowed to some servers.
 
 | Command | |
 |---|---|
-| `intergate config` | Interactive wizard. Creates the configuration on first run; then manages subdomains, SSH keys, users, server settings and where the SMTP password of the dashboard's setup comes from. `--accessible` uses plain prompts (also for screen readers and scripts: it accepts piped answers). |
+| `intergate config` | Interactive wizard. Creates the configuration on first run; then manages subdomains, SSH keys (a subdomain's, and each account's), users, server settings and where the SMTP password of the dashboard's setup comes from. `--accessible` uses plain prompts (also for screen readers and scripts: it accepts piped answers). |
 | `intergate setup-url` | Print a new one-time link to [the dashboard's setup](#the-dashboards-setup), replacing the one before. Only the URL goes to stdout. |
 | `intergate start` | Run in the foreground. `--detached` runs in the background, logging to `<data_dir>/intergate.log`. |
 | `intergate stop` / `status` | Stop a detached server / show whether it runs, with live counters. |
@@ -562,7 +566,9 @@ auth:
 
 - **SSH:** public-key authentication only; the key is checked again for every
   forward, so revoking it takes effect immediately. Local forwarding
-  (`ssh -L`) and other channel types are refused.
+  (`ssh -L`) and other channel types are refused. Removing a key from an
+  account, or disabling or deleting the account, closes the tunnels and
+  ports its keys opened, on anyone's subdomain.
 - **Accounts** are identified by verified email. Email codes are 6 digits,
   single use, valid 10 minutes, bound to the browser that asked for them,
   burned after 5 wrong guesses and rate limited per address and IP. The
@@ -643,7 +649,8 @@ It draws with a design system in
 `tokens.css` holds every value (colours by role in two tones, type, space,
 radii, shadows, motion), `icons.js` the icons, and `components/` the
 building blocks — `Button`, `Modal`, `Tabs`, `Card`, `Badge`, `Alert`,
-`Facts`, `Switch`, `Segmented`, `ChoiceCards`, `Icon` — which draw with those
+`Facts`, `Switch`, `Segmented`, `ChoiceCards`, `Select`, `FilePicker`,
+`OtpInput`, `Icon` — which draw with those
 tokens alone. `app.css` declares no colour of its own. Every component, in
 both tones, is on one page at `/ui/theme/default/` of any running
 dashboard, and at

@@ -11,8 +11,9 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:  "cloudflare",
-		Title: "Cloudflare",
+		Name:    "cloudflare",
+		Title:   "Cloudflare",
+		Summary: "An API token",
 		Help: "An API token (My Profile → API Tokens → Create Token) with the permission Zone → DNS → Edit,\n" +
 			"and Zone → Zone → Read unless you give the zone ID, for the zone of the domain.",
 		Fields: []Field{

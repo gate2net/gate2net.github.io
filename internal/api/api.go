@@ -75,11 +75,14 @@ type Key struct {
 	Fingerprint string    `json:"fingerprint"`
 	CreatedAt   time.Time `json:"created_at"`
 	LastUsedAt  time.Time `json:"last_used_at"`
+	// FromAccount is set for a key added from an account's keys: it goes
+	// when the account's does.
+	FromAccount bool `json:"from_account,omitempty"`
 }
 
 // NewKey describes k, without the key itself.
 func NewKey(k *store.Key) Key {
-	return Key{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt}
+	return Key{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, FromAccount: k.UserKeyID != 0}
 }
 
 // NewKeys describes keys; never nil, so it encodes as [].
@@ -87,6 +90,33 @@ func NewKeys(keys []*store.Key) []Key {
 	out := make([]Key, len(keys))
 	for i, k := range keys {
 		out[i] = NewKey(k)
+	}
+	return out
+}
+
+// AccountKey is an SSH key of an account, without the key itself.
+type AccountKey struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Fingerprint string    `json:"fingerprint"`
+	CreatedAt   time.Time `json:"created_at"`
+	// Subdomains are those it was added to.
+	Subdomains []string `json:"subdomains"`
+}
+
+// NewAccountKeys describes an account's keys and the subdomains each was
+// added to; never nil, so it encodes as [].
+func NewAccountKeys(keys []*store.UserKey, attached []store.Attachment) []AccountKey {
+	out := make([]AccountKey, 0, len(keys))
+	for _, k := range keys {
+		v := AccountKey{ID: k.ID, Name: k.Name, Type: k.Type(), Fingerprint: k.Fingerprint, CreatedAt: k.CreatedAt, Subdomains: []string{}}
+		for _, a := range attached {
+			if a.UserKeyID == k.ID {
+				v.Subdomains = append(v.Subdomains, a.Subdomain)
+			}
+		}
+		out = append(out, v)
 	}
 	return out
 }

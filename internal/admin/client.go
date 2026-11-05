@@ -159,6 +159,28 @@ func (c *Client) SetUserDisabled(ctx context.Context, id int64, disabled bool) e
 	return c.do(ctx, http.MethodPost, fmt.Sprintf("/v1/users/%d/%s", id, verb), nil, nil)
 }
 
+// UserKeys lists the SSH keys of an account.
+func (c *Client) UserKeys(ctx context.Context, id int64) ([]AccountKey, error) {
+	var out []AccountKey
+	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/users/%d/keys", id), nil, &out)
+}
+
+// AddUserKeys adds SSH keys to an account.
+func (c *Client) AddUserKeys(ctx context.Context, id int64, req KeysRequest) (KeysResult, error) {
+	var out KeysResult
+	return out, c.do(ctx, http.MethodPost, fmt.Sprintf("/v1/users/%d/keys", id), req, &out)
+}
+
+// RemoveUserKey removes a key from an account and from the subdomains it
+// was added to, which it returns.
+func (c *Client) RemoveUserKey(ctx context.Context, id, key int64) ([]string, error) {
+	var out struct {
+		RemovedFrom []string `json:"removed_from"`
+	}
+	err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/v1/users/%d/keys/%d", id, key), nil, &out)
+	return out.RemovedFrom, err
+}
+
 // SetupURL returns a new link to the dashboard's setup, replacing the
 // previous one.
 func (c *Client) SetupURL(ctx context.Context) (string, error) {

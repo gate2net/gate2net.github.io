@@ -208,13 +208,87 @@ func TestWizardManagesRunningServer(t *testing.T) {
 		"2",                  // + Add a user (after dev@example.com)
 		"newbie@example.com", // email
 		"2",                  // newbie
-		"y",                  // disable
+		"2",                  // Disable newbie@example.com
+		"y",                  // confirm
 		"4",                  // ← Back
 		"4",                  // Exit
 	)
 	u, err := h.store.UserByEmail(t.Context(), "newbie@example.com")
 	if err != nil || !u.Disabled {
 		t.Fatalf("user = %+v, %v\n%s", u, err, out)
+	}
+}
+
+// TestWizardAccountKeys adds a key to an account, then to a subdomain and
+// to a new one from there, and removes it from the account and with it
+// from both.
+func TestWizardAccountKeys(t *testing.T) {
+	h := newHarness(t)
+	h.serveAdmin()
+	path := filepath.Join(t.TempDir(), "intergate.yaml")
+	os.WriteFile(path, h.yaml, 0o600)
+	key := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(newSigner(t).PublicKey()))) + " laptop"
+	ctx := t.Context()
+
+	runWizard(t, path,
+		"1", "1", "wiz", "dev@example.com", "1", "", // a subdomain with no keys, and its owner
+		"3", "4",
+	)
+	out := runWizard(t, path,
+		"2",     // Users
+		"1",     // dev@example.com
+		"1",     // Add SSH keys to the account
+		key, "", // the key, no name
+		"4",      // ← Back (Add, Remove, Disable, Back)
+		"3", "4", // ← Back, Exit
+	)
+	if !strings.Contains(out, "Added 1 key(s) to the account") || !strings.Contains(out, "laptop") || !strings.Contains(out, "on no subdomain") {
+		t.Fatalf("add to the account:\n%s", out)
+	}
+
+	out = runWizard(t, path,
+		"1", "1", // Subdomains, wiz
+		"2", // Add a key from dev@example.com's account
+		"1", // laptop
+		"6", // ← Back (Add, Access, Remove, Command, Delete, Back)
+		"3", "4",
+	)
+	if !strings.Contains(out, "Key added") || !strings.Contains(out, "(account key)") {
+		t.Fatalf("add to the subdomain:\n%s", out)
+	}
+	out = runWizard(t, path,
+		"1", "2", "wiz2", "dev@example.com", "1", "", // register another
+		"2",      // SSH key from dev@example.com's account: laptop
+		"4", "4", // ← Back, Exit
+	)
+	if !strings.Contains(out, "Registered http://wiz2.gate.test for dev@example.com with 1 SSH key(s)") {
+		t.Fatalf("register with it:\n%s", out)
+	}
+	for _, name := range []string{"wiz", "wiz2"} {
+		d, err := h.store.SubdomainByName(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys, err := h.store.KeysBySubdomain(ctx, d.ID)
+		if err != nil || len(keys) != 1 || keys[0].UserKeyID == 0 {
+			t.Fatalf("%s keys = %+v, %v", name, keys, err)
+		}
+	}
+
+	out = runWizard(t, path,
+		"2", "1", // Users, dev@example.com
+		"2", // Remove a key from the account
+		"1", // laptop
+		"3", // ← Back (Add, Disable, Back)
+		"3", "4",
+	)
+	if !strings.Contains(out, "Key removed, from wiz, wiz2 too") {
+		t.Fatalf("remove:\n%s", out)
+	}
+	for _, name := range []string{"wiz", "wiz2"} {
+		if d, err := h.store.SubdomainByName(ctx, name); err != nil || d.Keys != 0 {
+			t.Fatalf("%s = %+v, %v", name, d, err)
+		}
 	}
 }
 

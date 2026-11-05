@@ -1,0 +1,156 @@
+<script :setup="{ items = [], model = '', label = '', name = '', disabled = false }">
+  // One of a list, in a field like the others of a form: a DNS provider, a
+  // service's preset, an SSH key. Each option can have an icon and a line
+  // under its name; the closed field shows the chosen one's.
+  //
+  // **Part of the default theme**: imports only the theme's `icons.js`, and
+  // draws only with `tokens.css`. See
+  // `RECORD/2026-10-29.a-design-system.completed.md`.
+  //
+  //   <Select label="DNS provider" :model="provider" :items="[
+  //     { value: 'cloudflare', label: 'Cloudflare', hint: 'An API token', icon: 'globe' },
+  //     { value: 'gcp', label: 'Google Cloud DNS', hint: 'A service account key', icon: 'server' },
+  //   ]" />
+  //
+  // An item is a string or `{ value, label, hint, icon, disabled }`. The
+  // choice goes up through `:model` and as `change`. A customizable select
+  // where browsers have one (`appearance: base-select`, its `<button>` with
+  // `<selectedcontent>`); elsewhere the browser's own, with the hint after a
+  // dot. Icons are drawn here, from `icons.js`: an option holds text and
+  // inline SVG, which `<selectedcontent>` copies, not components. The open
+  // list floats, white in either tone: its options are light islands.
+  const { ICONS } = await import("@theme/icons.js")
+
+  const flag = v => v === "" || v === true || v === "true"
+  $: options = items.map(o => typeof o === "string" ? { value: o, label: o } : o)
+  $: isDisabled = flag(disabled)
+
+  const choose = value => {
+    if (value === String(model)) return
+    const option = options.find(o => String(o.value) === value)
+    const next = option ? option.value : value
+    $updateModel(next)
+    $emit("change", next)
+  }
+</script>
+
+<select class="select" :name="name || null" :aria-label="label || null" :disabled="isDisabled" @change="choose($event.target.value)">
+  <button type="button"><selectedcontent></selectedcontent></button>
+  <option :each="option in options" :key="String(option.value)" :value="String(option.value)" data-tone="light"
+          :selected="String(option.value) === String(model)" :disabled="!!option.disabled">
+    <svg :if="option.icon" class="icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="ICONS[option.icon] || ''" /></svg>
+    <span class="text">
+      <span class="label">{{ option.label }}</span><span :if="option.hint" class="sep"> · </span><span :if="option.hint" class="hint">{{ option.hint }}</span>
+    </span>
+  </option>
+</select>
+
+<style scoped>
+  .select {
+    width: 100%;
+    min-height: 2.625rem;
+    padding: .5625rem .75rem;
+    border: var(--ig-hairline) solid var(--ig-field-line);
+    border-radius: var(--ig-radius-control);
+    background: var(--ig-field);
+    box-shadow: var(--ig-shadow-inset);
+    color: var(--ig-fg);
+    font: inherit;
+    font-family: var(--ig-font-sans);
+    font-size: max(16px, 1rem);
+    cursor: pointer;
+    transition: box-shadow var(--ig-duration), border-color var(--ig-duration), background-color var(--ig-duration);
+  }
+  .select:focus-visible {
+    outline: none;
+    border-color: var(--ig-accent);
+    box-shadow: var(--ig-ring);
+    background: var(--ig-field-focus);
+  }
+  .select:disabled { opacity: .5; cursor: default; }
+
+  @supports (appearance: base-select) {
+    .select {
+      display: flex;
+      align-items: center;
+      gap: var(--ig-space-3);
+      padding: .4375rem .75rem;
+      font-size: var(--ig-text-base);
+    }
+    .select > button { display: contents; }
+    .select selectedcontent {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      align-items: center;
+      gap: var(--ig-space-3);
+    }
+    /* Closed, the chosen option's name and its hint on one line. */
+    .select selectedcontent .text { flex-direction: row; align-items: baseline; gap: var(--ig-space-3); }
+    .select selectedcontent .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .select::picker-icon {
+      color: var(--ig-fg-muted);
+      font-size: var(--ig-text-2xs);
+      transition: rotate var(--ig-duration) ease;
+    }
+    /* Apart: a browser without :open drops the whole rule. */
+    .select:open { border-color: var(--ig-accent); box-shadow: var(--ig-ring); background: var(--ig-field-focus); }
+    .select:open::picker-icon { rotate: 180deg; }
+    option {
+      display: flex;
+      align-items: center;
+      gap: var(--ig-space-3);
+      min-height: 2.5rem;
+      padding: .375rem .625rem;
+      border-radius: var(--ig-radius-sm);
+      font-size: var(--ig-text-base);
+      line-height: 1.25rem;
+      color: var(--ig-fg);
+      cursor: pointer;
+    }
+    option:hover, option:focus-visible { background: var(--ig-fill); outline: none; }
+    option:checked { background: var(--ig-fill); }
+    option:disabled { opacity: .4; cursor: default; }
+    option::checkmark {
+      order: 1;
+      margin-left: auto;
+      padding-left: .625rem;
+      font-size: var(--ig-text-sm);
+      color: var(--ig-link);
+    }
+    .sep { display: none; }
+  }
+
+  .icon {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: var(--ig-fg-muted);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .text { display: flex; flex-direction: column; min-width: 0; }
+  .label { font-weight: var(--ig-weight-medium); white-space: nowrap; }
+  .hint { color: var(--ig-fg-muted); font-size: var(--ig-text-sm); }
+</style>
+
+<style>
+  /* Not scoped: the browser writes ::picker(select) back as ::picker, which
+     drops the rule when jq79 scopes it. */
+  @supports (appearance: base-select) {
+    select.select, select.select::picker(select) { appearance: base-select; }
+    select.select::picker(select) {
+      margin-top: .25rem;
+      padding: .25rem;
+      border: var(--ig-hairline) solid var(--ig-line);
+      border-radius: var(--ig-radius-md);
+      background: var(--ig-material-hud);
+      -webkit-backdrop-filter: var(--ig-blur);
+      backdrop-filter: var(--ig-blur);
+      box-shadow: var(--ig-shadow-pop);
+      color: var(--ig-fg);
+    }
+  }
+</style>

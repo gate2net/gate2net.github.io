@@ -91,6 +91,8 @@ func (s *Server) handleCreateSubdomain(w http.ResponseWriter, r *http.Request) {
 		Name   string       `json:"name"`
 		Access store.Access `json:"access"`
 		Keys   string       `json:"keys"`
+		// AccountKeys are keys of the account to add.
+		AccountKeys []int64 `json:"account_keys"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -107,6 +109,11 @@ func (s *Server) handleCreateSubdomain(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("add keys", "err", err)
 		res.Problems = append(res.Problems, "an internal error occurred")
 	}
+	result := api.KeysResult{Added: res.Added, Problems: res.Problems}
+	if err := s.attachAccountKeys(r, d, req.AccountKeys, &result); err != nil {
+		s.log.Error("add account keys", "err", err)
+		result.Problems = append(result.Problems, "an internal error occurred")
+	}
 	// Read back for the key count.
 	if d, err = s.store.SubdomainByName(r.Context(), d.Name); err != nil {
 		s.internalError(w, "load subdomain", err)
@@ -115,7 +122,7 @@ func (s *Server) handleCreateSubdomain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, struct {
 		Subdomain api.Subdomain  `json:"subdomain"`
 		Keys      api.KeysResult `json:"keys"`
-	}{s.view(d), api.KeysResult{Added: res.Added, Problems: res.Problems}})
+	}{s.view(d), result})
 }
 
 // loadSubdomain returns the subdomain in the URL if the user may manage
@@ -217,8 +224,23 @@ func (s *Server) handleAddKeys(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Keys string `json:"keys"`
 		Name string `json:"name"`
+		// AccountKey is a key of the account to add instead.
+		AccountKey int64 `json:"account_key"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	if req.AccountKey != 0 {
+		var result api.KeysResult
+		if err := s.attachAccountKeys(r, d, []int64{req.AccountKey}, &result); err != nil {
+			s.internalError(w, "add account key", err)
+			return
+		}
+		if result.Added == 0 {
+			jsonError(w, http.StatusBadRequest, capitalize(result.Problems[0])+".")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	res, err := s.manage.AddKeys(r.Context(), d, req.Keys, req.Name, currentAuth(r).User.Email)
@@ -367,7 +389,12 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 			keys = append(keys, passkeyView(p))
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"passkeys": keys})
+	accountKeys, err := s.accountKeys(r)
+	if err != nil {
+		s.internalError(w, "list account keys", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"passkeys": keys, "keys": accountKeys, "keys_limit": manage.KeysPerAccount})
 }
 
 func (s *Server) handleAdminSubdomains(w http.ResponseWriter, r *http.Request) {

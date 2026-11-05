@@ -46,10 +46,11 @@ type dnsView struct {
 }
 
 type dnsProviderView struct {
-	Name   string         `json:"name"`
-	Title  string         `json:"title"`
-	Help   string         `json:"help"`
-	Fields []dnsFieldView `json:"fields"`
+	Name    string         `json:"name"`
+	Title   string         `json:"title"`
+	Summary string         `json:"summary"`
+	Help    string         `json:"help"`
+	Fields  []dnsFieldView `json:"fields"`
 }
 
 type dnsFieldView struct {
@@ -69,7 +70,7 @@ func dashboardProviders() []dnsProviderView {
 		if spec.ConfigOnly {
 			continue
 		}
-		v := dnsProviderView{Name: spec.Name, Title: spec.Title, Help: spec.Help, Fields: []dnsFieldView{}}
+		v := dnsProviderView{Name: spec.Name, Title: spec.Title, Summary: spec.Summary, Help: spec.Help, Fields: []dnsFieldView{}}
 		for _, f := range spec.Fields {
 			if !f.ConfigOnly {
 				v.Fields = append(v.Fields, dnsFieldView{Name: f.Name, Title: f.Title, Description: f.Description, Required: f.Required, Secret: f.Secret, Upload: f.Upload})

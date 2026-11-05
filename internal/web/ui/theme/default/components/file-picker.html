@@ -1,0 +1,90 @@
+<script :setup="{ accept = '', button = 'Choose a file', placeholder = 'No file chosen', name = '', chosen = '', label = '' }">
+  // A file to read in the browser, in a field like the others of a form:
+  // a key, a certificate. A button to choose it, then its name.
+  //
+  // **Part of the default theme**: imports nothing, and draws only with
+  // `tokens.css`. See `RECORD/2026-10-29.a-design-system.completed.md`.
+  //
+  //   <FilePicker accept=".json,application/json" button="Choose the key"
+  //               placeholder="No key chosen" @pick="key = $event.detail.text" />
+  //
+  // `pick` brings `{ name, text }`, the file's name and content. `chosen`
+  // names a file chosen before, shown until another is; `label` names the
+  // field for a screen reader when no `<label>` around it does.
+
+  let picked = ""
+  $: shown = picked || chosen
+
+  const pick = async event => {
+    const file = event.target.files[0]
+    if (!file) return
+    picked = file.name
+    $emit("pick", { name: file.name, text: await file.text() })
+  }
+</script>
+
+<span class="file" :class.empty="!shown">
+  <input type="file" :name="name || null" :accept="accept || null" :aria-label="label || null" @change="pick($event)">
+  <span class="button" aria-hidden="true">{{ button }}</span>
+  <span class="name">{{ shown || placeholder }}</span>
+</span>
+
+<style scoped>
+  .file {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--ig-space-4);
+    min-height: 2.625rem;
+    padding: .3125rem .75rem .3125rem .3125rem;
+    border: var(--ig-hairline) solid var(--ig-field-line);
+    border-radius: var(--ig-radius-control);
+    background: var(--ig-field);
+    box-shadow: var(--ig-shadow-inset);
+    color: var(--ig-fg);
+    font-family: var(--ig-font-sans);
+    font-size: var(--ig-text-base);
+    font-weight: normal;
+    cursor: pointer;
+    transition: box-shadow var(--ig-duration), border-color var(--ig-duration), background-color var(--ig-duration);
+  }
+  /* The input covers the field, invisible: a click anywhere chooses, and
+     it keeps the keyboard's focus. */
+  .file input[type=file] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .file:focus-within {
+    border-color: var(--ig-accent);
+    box-shadow: var(--ig-ring);
+    background: var(--ig-field-focus);
+  }
+  .button {
+    flex: none;
+    padding: .375rem .75rem;
+    border-radius: var(--ig-radius-sm);
+    background: var(--ig-button-2);
+    box-shadow: var(--ig-button-2-shadow);
+    font-size: var(--ig-text-sm);
+    font-weight: var(--ig-weight-semibold);
+    white-space: nowrap;
+    transition: background-color var(--ig-duration) ease;
+  }
+  .file:hover .button { background: var(--ig-button-2-hover); }
+  .file:active .button { background: var(--ig-button-2-active); }
+  .name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--ig-weight-medium);
+  }
+  .empty .name { color: var(--ig-fg-muted); font-weight: normal; }
+</style>

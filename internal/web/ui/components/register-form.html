@@ -7,6 +7,19 @@
   const AccessOptions = await import("@ui/components/access-options.html")
   const Alert = await import("@theme/components/alert.html")
   const Button = await import("@theme/components/button.html")
+  const Select = await import("@theme/components/select.html")
+
+  // A key of the account can open it from the start.
+  let accountKeys = []
+  try {
+    accountKeys = await api("GET", "/account/keys")
+  } catch {}
+  const short = fp => fp.replace(/^SHA256:/, "").slice(0, 12) + "…"
+  const KEY_ITEMS = [
+    { value: 0, label: "None", hint: "Add keys later, or paste them below", icon: "close" },
+    ...accountKeys.map(k => ({ value: k.id, label: k.name, hint: `${k.type} · ${short(k.fingerprint)}`, icon: "key" })),
+  ]
+  let accountKey = accountKeys.length === 1 ? accountKeys[0].id : 0
 
   let name = ""
   let access = "public"
@@ -18,7 +31,7 @@
     busy = true
     error = ""
     try {
-      const result = await api("POST", "/subdomains", { name, access, keys })
+      const result = await api("POST", "/subdomains", { name, access, keys, account_keys: accountKey ? [accountKey] : [] })
       const host = `${result.subdomain.name}.${app.domain}`
       const problems = result.keys.problems || []
       if (problems.length) toast(`${host} is registered, but some keys were not added: ${problems.join("; ")}.`, "error")
@@ -45,7 +58,10 @@
     <legend>Who can open it <span class="hint">You can change it later on the subdomain’s page.</span></legend>
     <AccessOptions :model="access" @pick="access = $event.detail" />
   </fieldset>
-  <label>SSH public keys <span class="hint">Optional, one per line. You can add more later.</span>
+  <label :if="accountKeys.length">SSH key from your account <span class="hint">It opens the tunnel; you can add more later.</span>
+    <Select name="account-key" :model="accountKey" :items="KEY_ITEMS" />
+  </label>
+  <label>{{ accountKeys.length ? "Other SSH public keys" : "SSH public keys" }} <span class="hint">Optional, one per line. You can add more later.</span>
     <textarea name="keys" rows="3" spellcheck="false" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… you@laptop"
               :value="keys" @input="keys = $event.target.value"></textarea>
   </label>

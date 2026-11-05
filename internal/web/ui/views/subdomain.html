@@ -247,7 +247,7 @@
                   <button type="button" class="link" @click="renaming = 0">Cancel</button>
                 </form>
                 <span :else>{{ key.name }}</span>
-                <div class="muted small">{{ key.type }}</div>
+                <div class="muted small">{{ key.type }}<span :if="key.from_account" title="Removed from here when it is removed from its account"> · account key</span></div>
               </td>
               <td><code class="small">{{ key.fingerprint }}</code></td>
               <td class="hide-narrow">{{ ago(key.created_at) }}</td>

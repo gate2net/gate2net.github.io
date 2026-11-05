@@ -1,17 +1,50 @@
-<script :setup="{ sub, cancel = false }">
-  // The form that adds SSH keys to a subdomain, and emits `added` once some
-  // are. On the page while it has none; in a dialog once it has one. With
-  // `:cancel`, it has a Cancel button that emits `cancel`, for the dialog.
+<script :setup="{ sub = null, account = false, cancel = false }">
+  // The form that adds SSH keys, and emits `added` once some are: to a
+  // subdomain (`sub`), picked from the account's keys or pasted, or to the
+  // account (`:account`). On the page while there are none; in a dialog
+  // once there is one. With `:cancel`, it has a Cancel button that emits
+  // `cancel`, for the dialog.
   const { toast } = await import("@ui/lib/store.js")
   const { api } = await import("@ui/lib/api.js")
   const { plural } = await import("@ui/lib/format.js")
   const Alert = await import("@theme/components/alert.html")
   const Button = await import("@theme/components/button.html")
+  const Select = await import("@theme/components/select.html")
+
+  const flag = v => v === "" || v === true || v === "true"
+  const toAccount = flag(account)
+  const path = toAccount ? "/account/keys" : "/subdomains/" + encodeURIComponent(sub.name) + "/keys"
 
   let keys = ""
   let name = ""
   let busy = false
   let error = ""
+
+  // A subdomain's form offers the account's keys it does not have yet.
+  let accountKeys = []
+  if (!toAccount) {
+    try {
+      const have = new Set(sub.key_list.map(k => k.fingerprint))
+      accountKeys = (await api("GET", "/account/keys")).filter(k => !have.has(k.fingerprint))
+    } catch {}
+  }
+  const short = fp => fp.replace(/^SHA256:/, "").slice(0, 12) + "…"
+  $: keyItems = accountKeys.map(k => ({ value: k.id, label: k.name, hint: `${k.type} · ${short(k.fingerprint)}`, icon: "key" }))
+  let picked = accountKeys.length ? accountKeys[0].id : 0
+
+  const pick = async () => {
+    busy = true
+    error = ""
+    try {
+      await api("POST", path, { account_key: picked })
+      const key = accountKeys.find(k => k.id === picked)
+      toast(`Added ${key ? key.name : "the key"}.`)
+      $emit("added")
+    } catch (e) {
+      error = e.message
+    }
+    busy = false
+  }
 
   // What was added leaves the form, which may go with it (the page's, once
   // there is a key), so a key that was not added is told in the toast; with
@@ -20,7 +53,7 @@
     busy = true
     error = ""
     try {
-      const result = await api("POST", "/subdomains/" + encodeURIComponent(sub.name) + "/keys", { keys, name })
+      const result = await api("POST", path, { keys, name })
       const problems = result.problems || []
       if (!result.added) error = `Added no keys: ${problems.join("; ")}.`
       else {
@@ -37,19 +70,33 @@
   }
 </script>
 
-<form class="form" @submit.prevent="add">
+<div class="keys-forms">
   <Alert :if="error" tone="bad" flush>{{ error }}</Alert>
-  <label>Public keys
-    <span class="hint">One per line: the contents of <code>~/.ssh/id_ed25519.pub</code>, or of <code>https://github.com/&lt;user&gt;.keys</code>.</span>
-    <textarea name="keys" rows="3" required spellcheck="false" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… you@laptop"
-              :value="keys" @input="keys = $event.target.value"></textarea>
-  </label>
-  <label>Name <span class="hint">Optional. Defaults to the key comment.</span>
-    <input name="name" maxlength="64" autocomplete="off" :value="name" @input="name = $event.target.value">
-  </label>
-  <div :if="cancel" class="form-actions">
-    <Button variant="secondary" @click="$emit('cancel')">Cancel</Button>
-    <Button type="submit" :disabled="busy">Add keys</Button>
-  </div>
-  <div :else><Button type="submit" :disabled="busy">Add keys</Button></div>
-</form>
+
+  <form :if="keyItems.length" class="form" @submit.prevent="pick">
+    <label>From your account <span class="hint">The keys you added in your account’s SSH keys.</span>
+      <span class="form-row pick-key">
+        <Select name="account-key" :model="picked" :items="keyItems" />
+        <Button type="submit" :disabled="busy">Add the key</Button>
+      </span>
+    </label>
+  </form>
+  <p :if="keyItems.length" class="or">or paste one</p>
+
+  <form class="form" @submit.prevent="add">
+    <label>Public keys
+      <span class="hint">One per line: the contents of <code>~/.ssh/id_ed25519.pub</code>, or of <code>https://github.com/&lt;user&gt;.keys</code>.</span>
+      <textarea name="keys" rows="3" required spellcheck="false" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… you@laptop"
+                :value="keys" @input="keys = $event.target.value"></textarea>
+    </label>
+    <label>Name <span class="hint">Optional. Defaults to the key comment.</span>
+      <input name="name" maxlength="64" autocomplete="off" :value="name" @input="name = $event.target.value">
+    </label>
+    <p :if="!toAccount && !keyItems.length" class="hint">Keys you add to <a href="/account?tab=keys">your account</a> can be picked here, on any of your subdomains.</p>
+    <div :if="cancel" class="form-actions">
+      <Button variant="secondary" @click="$emit('cancel')">Cancel</Button>
+      <Button type="submit" :disabled="busy">Add keys</Button>
+    </div>
+    <div :else><Button type="submit" :disabled="busy">Add keys</Button></div>
+  </form>
+</div>
